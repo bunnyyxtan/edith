@@ -1,28 +1,45 @@
-// Offline check of the decision logic: uses MemWalMock, no network, no keys.
+// Offline checks of memory records and history loading, using the SDK's MemWalMock.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MemWalMock } from "@mysten-incubation/memwal";
-import { requestKey, findFailure, rememberEvent, parseRecord } from "../src/memory.mjs";
+import { describeRequest, formatRecord, loadHistory, parseRecord, rememberEvent, toOutcome } from "../src/memory.mjs";
 
-test("requestKey ignores host and query order", () => {
-  assert.equal(requestKey("get", "http://a:1/quote?b=2&a=1"), requestKey("GET", "http://b:2/quote?a=1&b=2"));
+const CONTEXT = { endpoint: "GET_/quote", provider: "api.example:4020", network: "mainnet" };
+
+test("describeRequest ignores query order and separates host from request identity", () => {
+  const a = describeRequest("get", "http://a.example:1/quote?b=2&a=1");
+  const b = describeRequest("GET", "http://b.example:2/quote?a=1&b=2");
+  assert.equal(a.key, b.key);
+  assert.equal(a.endpoint, "GET_/quote");
+  assert.notEqual(a.provider, b.provider);
 });
 
-test("recalls only exact-key failures, newest first", async () => {
+test("records round-trip, including values that contain '=' and spaces", () => {
+  const text = formatRecord({ key: "GET /q?a=1", reason: "HTTP 502 upstream timeout" });
+  assert.deepEqual(parseRecord(text), { key: "GET_/q?a=1", reason: "HTTP_502_upstream_timeout" });
+});
+
+test("legacy failure records still count as failures", () => {
+  const legacy = parseRecord("event=failure key=GET_/quote?ticker=ZZZ network=mainnet paid=1000000 digest=d reason=empty_or_malformed_payload at=2026-11-02T11:12:16.577Z");
+  const outcome = toOutcome(legacy);
+  assert.equal(outcome.result, "failure");
+  assert.equal(outcome.kind, "bad_payload");
+  assert.equal(outcome.endpoint, "GET_/quote");
+  assert.equal(outcome.paid, 1_000_000n);
+  assert.equal(toOutcome(parseRecord("event=failure key=GET_/quote network=mainnet reason=HTTP_502_x")).kind, "transient");
+  assert.equal(toOutcome(parseRecord("event=avoided key=GET_/quote")), null);
+});
+
+test("loadHistory keeps only outcomes for the same endpoint, provider and network", async () => {
   const memory = new MemWalMock({ namespace: "edith" });
-  const bad = requestKey("GET", "http://x/quote?ticker=ZZZ");
-  const near = requestKey("GET", "http://x/quote?ticker=ZZ");
-  await rememberEvent(memory, { event: "failure", key: near, network: "mainnet", paid: 1, digest: "d0", reason: "other" });
-  await rememberEvent(memory, { event: "avoided", key: bad, network: "mainnet", saved: 1 });
-  await rememberEvent(memory, { event: "failure", key: bad, network: "devnet", paid: 1, digest: "dd", reason: "other" });
-  assert.equal(await findFailure(memory, bad, "mainnet"), null, "avoided events, near keys and other networks must not match");
+  const base = { event: "outcome", ...CONTEXT, paid: 1, digest: "d" };
+  await rememberEvent(memory, { ...base, key: "GET_/quote?ticker=ZZZ", result: "failure", kind: "bad_payload" });
+  await rememberEvent(memory, { ...base, key: "GET_/quote?ticker=SUI", result: "success" });
+  await rememberEvent(memory, { ...base, network: "devnet", key: "GET_/quote?ticker=SUI", result: "success" });
+  await rememberEvent(memory, { ...base, provider: "other.example", key: "GET_/quote?ticker=SUI", result: "success" });
+  await rememberEvent(memory, { ...base, endpoint: "GET_/news", key: "GET_/news", result: "success" });
+  await rememberEvent(memory, { event: "avoided", ...CONTEXT, key: "GET_/quote?ticker=ZZZ" });
 
-  await rememberEvent(memory, { event: "failure", key: bad, network: "mainnet", paid: 1000000, digest: "d1", reason: "empty or malformed payload" });
-  const hit = await findFailure(memory, bad, "mainnet");
-  assert.equal(hit.digest, "d1");
-  assert.equal(hit.reason, "empty_or_malformed_payload");
-});
-
-test("parseRecord round-trips values containing '='", () => {
-  assert.deepEqual(parseRecord("key=GET_/q?a=1 x=y"), { key: "GET_/q?a=1", x: "y" });
+  const history = await loadHistory(memory, CONTEXT);
+  assert.deepEqual(history.map((r) => r.result).sort(), ["failure", "success"]);
 });
