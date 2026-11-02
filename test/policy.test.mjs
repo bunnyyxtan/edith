@@ -63,6 +63,13 @@ test("reliability counts distinct requests, not retries of one request", () => {
   assert.equal(decide([...retries, ok(SUI)], { key: "GET_/quote?ticker=NEW", now: NOW }).action, "pay");
 });
 
+test("transient failures never make an endpoint unreliable", () => {
+  const cooled = { at: ago(POLICY.transientCooldownMs + MIN) };
+  const history = [fail("GET_/quote?ticker=A", "transient", cooled), fail("GET_/quote?ticker=B", "transient", cooled), fail("GET_/quote?ticker=C", "transient", cooled), fail(ZZZ, "bad_payload"), ok(SUI)];
+  assert.equal(decide(history, { key: "GET_/quote?ticker=A", now: NOW }).action, "pay", "a cooled-down request can retry");
+  assert.equal(decide(history, { key: "GET_/quote?ticker=NEW", now: NOW }).action, "pay");
+});
+
 test("a request that last succeeded stays payable on an unreliable endpoint", () => {
   const history = [fail("GET_/quote?ticker=A", "bad_payload"), fail("GET_/quote?ticker=B", "bad_payload"), fail("GET_/quote?ticker=C", "bad_payload"), ok(SUI)];
   assert.equal(decide(history, { key: "GET_/quote?ticker=NEW", now: NOW }).action, "skip");
