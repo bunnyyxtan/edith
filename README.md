@@ -23,12 +23,35 @@ agent                         paid API                      Sui (via Tatum gRPC)
 
 On the next run, in a fresh process, the recall finds that failure and the agent declines to pay.
 
-1. **Recall.** Before paying, the agent queries Walrus Memory for failures on the same request. Semantic recall narrows the candidates; the decision requires an exact match on method, path, sorted query and network, so one bad ticker never blocks a good one.
-2. **Pay.** The API answers `402 Payment Required` with x402-style terms (`payTo`, amount, asset, network). The agent enforces a per-call spend cap and a network check, then pays with a SUI transfer.
-3. **Verify.** The API verifies the transaction through Tatum's Sui gateway: the transfer must have succeeded and credited `payTo` with at least the price. Each digest is accepted once.
-4. **Judge and remember.** The agent validates the response. If it paid and got nothing usable, it writes a failure record (request, network, amount, digest, reason) to Walrus Memory.
+1. **Recall.** Before paying, the agent loads every remembered paid outcome for the endpoint (same provider and network) from Walrus Memory. Semantic recall finds candidates; exact fields decide.
+2. **Decide.** A pure policy (`src/policy.mjs`) turns that history into pay or skip, before the provider is contacted when possible and again once the price is known.
+3. **Pay.** The API answers `402 Payment Required` with x402-style terms and a signed challenge. The agent validates the terms, enforces a per-call spend cap, pays with a SUI transfer, and signs a proof binding the challenge to the transaction.
+4. **Verify.** The API checks the challenge and proof, then confirms through Tatum's Sui gateway that the transfer succeeded, credited the payee, and was sent by the proof's signer.
+5. **Judge and remember.** The agent classifies the response and writes the outcome, success or failure, to Walrus Memory.
 
 Settled Sui payments cannot be reversed. Edith does not recover money; it stops the loss from repeating.
+
+## What Edith learns
+
+| Memory says | Decision |
+|---|---|
+| This exact request paid and returned junk or a 4xx | Skip it, permanently, until a later success clears it |
+| This exact request hit a 5xx or 429 | Skip it for 15 minutes, then retry once |
+| Most distinct requests on this endpoint failed (at least 3) | Skip unseen requests on the endpoint; requests that last succeeded stay payable |
+| The quoted price is over 2x the best price that previously paid off | Refuse the price |
+
+Reliability counts each distinct request's latest outcome, so retrying one flaky request does not condemn its endpoint.
+
+## Payment security
+
+| Threat | Defence |
+|---|---|
+| Someone redeems a digest they saw on chain | The proof must be signed by the transaction's sender |
+| A payment is reused for another request | The challenge binds resource, amount, payee and network, and is HMAC-signed |
+| An old payment is reused for a new challenge | Payments older than the challenge are rejected; challenges expire after 5 minutes |
+| The same digest is redeemed twice, including concurrently | Digests are reserved before any await and persisted to disk once redeemed |
+| The verifier is rate-limited after the agent paid | Lookups retry with backoff; outages return 503 with `Retry-After` and the agent retries the same proof |
+| A provider quotes an unsafe price, asset or network | The agent validates terms against a spend cap, SUI only, and its own network |
 
 ## Tatum and Walrus
 
@@ -59,34 +82,54 @@ npm run agent -- "http://localhost:4020/quote?ticker=ZZZ"       # pays, gets jun
 npm run agent -- "http://localhost:4020/quote?ticker=ZZZ"       # recalls, does not pay
 ```
 
-The demo API returns real quotes for `SUI`, `WAL` and `BTC`. `ZZZ` takes payment and returns an empty body; `FLAKY` takes payment and returns `502`.
+The demo API returns real quotes for `SUI`, `WAL` and `BTC`. `ZZZ` takes payment and returns an empty body, `FLAKY` returns `502`, `GONE` returns `410`, and unknown tickers return `404`.
+
+Set `SERVER_CHALLENGE_SECRET` to keep challenges valid across API restarts; otherwise a random secret is generated per process.
+
+## Tests
+
+```bash
+npm test
+```
+
+The suite runs offline: the payment protocol, the paywall (replay, concurrency, stolen digests, expiry, outages) over real Ed25519 signatures, the decision policy, Tatum lookup handling with a stubbed client, and memory records against the SDK's `MemWalMock`.
 
 ## Mainnet run
 
-| Request | Result | Transaction |
-|---|---|---|
-| `ticker=SUI` | Paid, quote returned | [H9oQdHwA...](https://suiscan.xyz/mainnet/tx/H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd) |
-| `ticker=ZZZ` | Paid, empty body, failure remembered | [GXTajvsC...](https://suiscan.xyz/mainnet/tx/GXTajvsC1XrEWDJ8ZRDUeGfxQihmEAqUvpgbYRDY3An5) |
-| `ticker=ZZZ` (new process) | Failure recalled, payment skipped | none |
-| `ticker=FLAKY` | Paid, HTTP 502, failure remembered | [GSwxDzS6...](https://suiscan.xyz/mainnet/tx/GSwxDzS6faeEU3XFHLp5Pu1eUap1uvWQKXstyWMccsRi) |
+Each line is a separate agent process; everything it knows comes from Walrus Memory.
+
+| Request | Memory before | Decision | Outcome | Transaction |
+|---|---|---|---|---|
+| `ZZZ` | paid, empty body | Skip, known junk | No payment | none |
+| `BTC` | 5xx 19 min earlier | Pay, cooldown over | Quote returned | [Fks2tvHc...](https://suiscan.xyz/mainnet/tx/Fks2tvHcn2jRFzaefc1sffG8nLHeM7j73ZRFFV8NW53h) |
+| `GONE` | nothing | Pay | 410, remembered | [6HT3v8KF...](https://suiscan.xyz/mainnet/tx/6HT3v8KFpmwPig2UpP48C13NHd9GtXTZXnRwrLYvSZ36) |
+| `GONE` | 410 | Skip, known rejection | No payment | none |
+| `FLAKY` | 5xx 42 min earlier | Pay, cooldown over | 502, remembered | [2BHnw9M1...](https://suiscan.xyz/mainnet/tx/2BHnw9M1ygZZAZK8irq1yU6UC3apvwCZMztiCh97M1tX) |
+| `FLAKY` | 502 just now | Skip, cooling down | No payment | none |
+| `QQQ`, `XXX`, `YYY` | nothing | Pay | 404 each, remembered | [6gos5Lsr...](https://suiscan.xyz/mainnet/tx/6gos5LsrCbtm8oXgzE8RbmvPmapdL46T6HrdbXZAyiNm) |
+| `NEW` | 5 of 9 requests on `/quote` broken | Skip, endpoint unreliable | No payment | none |
+| `SUI` | succeeded before | Pay, known good | Quote returned | [Bmd7dz9n...](https://suiscan.xyz/mainnet/tx/Bmd7dz9nyWZHCFifDNM9DqfV5YWRSur9dGb1wGygvwuy) |
 
 ## Project layout
 
 ```
-src/agent.mjs                  paying agent with memory-backed skip decision
-src/server.mjs                 demo paid API (x402-style 402 flow)
-src/sui.mjs                    Tatum gRPC client and payment verification
-src/memory.mjs                 Walrus Memory records and failure lookup
+src/agent.mjs                  paying agent: recall, decide, pay, prove, judge, remember
+src/policy.mjs                 pure pay-or-skip policy over remembered outcomes
+src/payment.mjs                challenge, payer proof and 402 terms validation
+src/paywall.mjs                server-side redemption and replay ledger
+src/server.mjs                 demo paid API
+src/sui.mjs                    Tatum gRPC client and payment lookup
+src/memory.mjs                 Walrus Memory outcome records
 scripts/setup-wallets.mjs      wallet creation and devnet funding
 scripts/check-integrations.mjs read-only Tatum and Walrus health check
-test/memory.test.mjs           offline tests using MemWalMock
+test/                          offline test suite
 ```
 
 ## Limitations
 
-- The demo API keeps used digests in memory, so replay protection resets on restart.
-- A payment is not yet bound to a specific request; any verified transfer of the right amount unlocks one call.
 - The payment flow follows the x402 shape but is not wire-compatible with an x402 facilitator.
+- History is recalled per endpoint with a ceiling of 100 records; long-lived endpoints would need periodic summarization.
+- The replay ledger is a local file, suitable for a single API instance.
 
 ## License
 
