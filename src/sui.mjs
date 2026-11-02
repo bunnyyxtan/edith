@@ -34,7 +34,7 @@ export async function withRetry(fn, { attempts = 4, baseDelayMs = 500 } = {}) {
 
 // ok only if the tx succeeded and payTo received at least minAmount of coinType.
 // A digest the chain still does not know after retries is reported as not paid, not as an outage.
-export async function verifyPayment(client, digest, { payTo, minAmount, coinType = SUI_COIN }) {
+export async function verifyPayment(client, digest, { payTo, minAmount }) {
   let res;
   try {
     res = await withRetry(() => client.core.getTransaction({ digest, include: { balanceChanges: true, transaction: true } }));
@@ -44,7 +44,7 @@ export async function verifyPayment(client, digest, { payTo, minAmount, coinType
   }
   const tx = res.Transaction ?? res.FailedTransaction;
   const received = tx.balanceChanges
-    .filter((c) => c.address === payTo && coinSuffix(c.coinType) === coinSuffix(coinType))
+    .filter((c) => c.address === payTo && coinSuffix(c.coinType) === coinSuffix(SUI_COIN))
     .reduce((sum, c) => sum + BigInt(c.amount), 0n);
   return {
     ok: tx.status.success && received >= BigInt(minAmount),
