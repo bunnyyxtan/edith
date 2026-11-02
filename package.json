@@ -1,0 +1,24 @@
+{
+  "name": "edith",
+  "version": "0.1.0",
+  "description": "A paying AI agent that remembers bad paid API calls in Walrus Memory and verifies Sui payments through Tatum.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "setup:wallets": "node scripts/setup-wallets.mjs",
+    "check": "node --env-file=.env scripts/check-integrations.mjs",
+    "server": "node --env-file=.env src/server.mjs",
+    "agent": "node --env-file=.env src/agent.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.7",
+    "@mysten-incubation/memwal": "0.1.12",
+    "@mysten/sui": "2.38.0",
+    "@protobuf-ts/grpc-transport": "2.11.1"
+  }
+}
