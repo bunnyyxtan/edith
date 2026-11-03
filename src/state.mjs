@@ -4,7 +4,7 @@
 //
 // `db` is { query(sql, params) -> { rows }, tx(fn(query)) }; pgDb wraps a pg Pool, pgliteDb an in-process PGlite.
 // Times are passed in from the app clock, not taken from the database, so every instance agrees on expiry.
-import { DEFAULT_LIMITS } from "./store.mjs";
+import { freshUser } from "./store.mjs";
 import { ADDRESS_RE } from "./auth.mjs";
 
 const SCHEMA = `
@@ -21,6 +21,13 @@ CREATE TABLE IF NOT EXISTS edith_rate (
 `;
 
 const STALE_RESERVATION_MS = 6 * 60_000; // longer than a function may run (5 min); then a stuck reservation can be retried
+const WRITER_GUARD_BODY = ` BEGIN
+        IF current_setting('edith.payment_writer', true) IS DISTINCT FROM '2' THEN
+          RAISE EXCEPTION 'EDITH wallet writer is obsolete: guarded writer required';
+        END IF;
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+      END `;
 
 export function pgDb(pool) {
   return {
@@ -51,6 +58,29 @@ export function pgliteDb(pglite) {
 
 export async function migrate(db) {
   for (const statement of SCHEMA.split(";").map((s) => s.trim()).filter(Boolean)) await db.query(statement);
+  await db.tx(async (q) => {
+    // Serialize cold starts. A transaction-local marker works with Neon's pooled connections;
+    // older deployments cannot silently overwrite wallet records, even for brand-new wallets.
+    await q("SELECT pg_advisory_xact_lock(170114, 2)");
+    const { rows } = await q(`SELECT t.tgenabled, t.tgtype, t.tgnargs, t.tgattr::text AS columns,
+        t.tgqual IS NULL AS unconditional, p.prosrc,
+        t.tgfoid = to_regprocedure('edith_guard_wallet_writer()') AS expected_function
+      FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+      WHERE t.tgrelid = 'edith_users'::regclass AND t.tgname = 'edith_wallet_writer_guard' AND NOT t.tgisinternal`);
+    if (rows.length) {
+      const guard = rows[0];
+      if (!["O", "A"].includes(guard.tgenabled) || guard.tgtype !== 31 || guard.tgnargs !== 0 ||
+        guard.columns !== "" || !guard.unconditional || !guard.expected_function || guard.prosrc !== WRITER_GUARD_BODY) {
+        throw new Error("EDITH wallet writer fence differs from this release; operator review required.");
+      }
+      return; // The installed fence is correct: no function/trigger DDL on ordinary cold starts.
+    }
+    await q(`CREATE OR REPLACE FUNCTION edith_guard_wallet_writer() RETURNS trigger
+      LANGUAGE plpgsql AS $$${WRITER_GUARD_BODY}$$`);
+    await q(`CREATE TRIGGER edith_wallet_writer_guard
+      BEFORE INSERT OR UPDATE OR DELETE ON edith_users
+      FOR EACH ROW EXECUTE FUNCTION edith_guard_wallet_writer()`);
+  });
 }
 
 const at = (ms) => new Date(ms).toISOString();
@@ -58,7 +88,7 @@ const asJson = (value) => JSON.stringify(value);
 
 // Same interface as the file store in store.mjs: read(address), update(address, change).
 export function pgStore(db) {
-  const fresh = (address) => ({ address, createdAt: new Date().toISOString(), limits: DEFAULT_LIMITS, activity: [], agents: [] });
+  const fresh = freshUser;
   const check = (address) => {
     if (!ADDRESS_RE.test(address)) throw new Error("invalid address");
   };
@@ -73,6 +103,7 @@ export function pgStore(db) {
     update(address, change) {
       check(address);
       return db.tx(async (q) => {
+        await q("SELECT set_config('edith.payment_writer', '2', true)");
         await q("INSERT INTO edith_users (address, data) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING", [address, asJson(fresh(address))]);
         const { rows } = await q("SELECT data FROM edith_users WHERE address = $1 FOR UPDATE", [address]);
         const next = change(rows[0].data);

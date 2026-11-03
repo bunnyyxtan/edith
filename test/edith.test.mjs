@@ -9,7 +9,9 @@ import { MemWalMock } from "@mysten-incubation/memwal";
 import { createEdith, SettleError } from "../src/edith.mjs";
 import { createLedger, createPaywall } from "../src/paywall.mjs";
 import { createApp } from "../src/server.mjs";
+import { createServer } from "node:http";
 import { settlePayment } from "../src/sui.mjs";
+import { createProviderFetch, MAX_PROVIDER_RESPONSE_BYTES } from "../src/net.mjs";
 import { fakeChain, signedTransfer } from "./chain.mjs";
 
 const PAY_TO = `0x${"d".repeat(64)}`;
@@ -31,7 +33,7 @@ async function setup(t) {
   });
   const base = await listen(t, createApp(paywall));
   const memory = new MemWalMock({ namespace: "edith" });
-  const edith = createEdith({ sui: chain.client, memory, network: "mainnet", payer: payer.toSuiAddress(), namespace: "edith-test" });
+  const edith = createEdith({ sui: chain.client, memory, network: "mainnet", payer: payer.toSuiAddress(), namespace: "edith-test", fetch: createProviderFetch({ allowPrivate: true }) });
   // What the payer's wallet does when it approves a quote.
   const sign = async ({ terms }, overrides = {}) => {
     const t2 = await signedTransfer({ payer, payTo: terms.payTo, amount: terms.amount, ...overrides });
@@ -114,14 +116,50 @@ test("a transfer that does not match the quote never leaves Edith", async (t) =>
   assert.equal(chain.calls.execute, 0, "nothing was submitted");
 });
 
-test("a provider that refuses the payment leaves nothing paid", async (t) => {
+test("a provider refusal cannot prove a handed-off signature will never settle", async (t) => {
   const { edith, chain, base, sign } = await setup(t);
   const planned = await edith.plan(`${base}/quote?ticker=SUI`);
   const signed = await sign(planned);
   chain.overrides[signed.digest] = { executeThrows: Object.assign(new Error("bad sig"), { code: "INVALID_ARGUMENT" }) };
   const err = await edith.settle(planned, signed).catch((e) => e);
-  assert.equal(err.stage, "refused");
-  assert.equal(err.paid, false);
+  assert.equal(err.stage, "uncertain");
+  assert.equal(err.paid, null);
+  assert.doesNotMatch(err.message, /Nothing was paid/);
+  chain.land(signed.digest);
+  assert.equal((await edith.reconcile({ ...planned, digest: signed.digest })).paid, true);
+});
+
+test("an oversized reply after signature handoff still uses chain evidence for paid or uncertain status", async (t) => {
+  const { edith, chain, base, sign } = await setup(t);
+  const planned = await edith.plan(`${base}/quote?ticker=SUI`);
+  const signed = await sign(planned);
+  let landed = false;
+  const oversized = await listen(t, createServer((req, res) => {
+    assert.ok(req.headers["x-payment"]);
+    if (landed) chain.land(signed.digest);
+    res.writeHead(200, { "content-length": String(MAX_PROVIDER_RESPONSE_BYTES + 1) });
+    res.flushHeaders(); // provider can have received the signature before Edith rejects its reply
+  }));
+  const request = { ...planned, url: oversized };
+  await assert.rejects(edith.settle(request, signed), (err) => err.stage === "uncertain" && err.paid === null);
+  landed = true;
+  const result = await edith.settle(request, signed);
+  assert.equal(result.verification.ok, true);
+  assert.equal(result.result, "failure", "a confirmed payment without an acceptable reply is still paid");
+});
+
+test("a finalized chain failure, unlike a provider refusal, can release the reservation", async (t) => {
+  const { edith, chain, base, sign } = await setup(t);
+  const planned = await edith.plan(`${base}/quote?ticker=SUI`);
+  const signed = await sign(planned);
+  const simulate = chain.client.core.simulateTransaction;
+  chain.client.core.simulateTransaction = async (args) => {
+    const result = await simulate(args);
+    chain.overrides[signed.digest] = { success: false };
+    return result;
+  };
+  await assert.rejects(edith.settle(planned, signed), (err) => err.stage === "refused" && /Sui confirmed/.test(err.message));
+  assert.equal((await edith.reconcile({ ...planned, digest: signed.digest })).final, true);
 });
 
 test("an unreachable provider is uncertain until Sui says otherwise, then reconciled", async (t) => {

@@ -8,15 +8,31 @@ import { randomBytes } from "node:crypto";
 import { ADDRESS_RE } from "./auth.mjs";
 
 export const DEFAULT_LIMITS = { perCallMist: "5000000", dailyMist: "20000000" }; // 0.005 SUI per call, 0.02 SUI a day
+// Only records created by the guarded writer start with a complete history. Existing records
+// require an evidence-backed operator reconciliation; an empty display history proves nothing.
+export const freshUser = (address) => ({ address, createdAt: new Date().toISOString(), limits: DEFAULT_LIMITS,
+  activity: [], agents: [], paymentHistory: { version: 1, basis: "created-with-guards" } });
+export const paymentHistoryReady = (user) => user.paymentHistory?.version === 1 &&
+  (user.paymentHistory.basis === "created-with-guards" ||
+    (user.paymentHistory.basis === "reconciled" && Boolean(user.paymentHistory.evidenceRef) && Boolean(user.paymentHistory.reviewedAt)));
 const ACTIVITY_KEPT = 200;
 const DAY_MS = 24 * 60 * 60_000;
 
 // Activity states that count against the daily limit: money that moved, is moving, or might have.
 const SPENDING = new Set(["settling", "paid", "uncertain"]);
+const pending = (item) => item.state === "settling" || item.state === "uncertain";
+
+// Older versions called an unobserved, handed-off signature "refused". It can still land.
+const paymentState = (item) => item.state === "refused" && item.digest && !item.chainFailed && !item.invalidationProof
+  ? { ...item, state: "uncertain", error: "This signed payment may still settle. Check Sui before paying again." }
+  : item;
+const paymentTime = (item) => Date.parse(item.verifiedAt ?? item.settlingAt ?? item.at);
+// Existing JSON/JSONB records migrate lazily, inside the same atomic wallet update.
+const payments = (user) => user.spending ?? user.activity.map(paymentState).filter((a) => SPENDING.has(a.state));
 
 export function spentSince(user, sinceMs) {
-  return user.activity
-    .filter((a) => SPENDING.has(a.state) && Date.parse(a.at) >= sinceMs)
+  return payments(user)
+    .filter((a) => pending(a) || (a.state === "paid" && paymentTime(a) >= sinceMs))
     .reduce((sum, a) => sum + BigInt(a.amountMist ?? 0), 0n);
 }
 
@@ -25,11 +41,19 @@ export const spentToday = (user, now = Date.now()) => spentSince(user, now - DAY
 export const newActivityId = () => randomBytes(9).toString("base64url");
 
 // Returns a copy of `user` with the activity item `id` merged with `fields`, or added if new.
-export function withActivity(user, id, fields) {
-  const existing = user.activity.find((a) => a.id === id);
+export function withActivity(user, id, fields, now = Date.now()) {
+  const history = user.activity.map(paymentState);
+  const existing = history.find((a) => a.id === id) ?? payments(user).find((a) => a.id === id);
   const item = { ...existing, ...fields, id };
-  const rest = user.activity.filter((a) => a.id !== id);
-  return { ...user, activity: [item, ...rest].sort((a, b) => b.at.localeCompare(a.at)).slice(0, ACTIVITY_KEPT) };
+  const rest = history.filter((a) => a.id !== id);
+  const spending = payments(user).filter((a) => a.id !== id);
+  if (SPENDING.has(item.state)) spending.push(item);
+  return {
+    ...user,
+    // Keep unresolved payments and the just-updated result visible for reconciliation/review.
+    activity: [item, ...rest].sort((a, b) => b.at.localeCompare(a.at)).filter((a, i) => i < ACTIVITY_KEPT || pending(a) || a.id === id),
+    spending: spending.filter((a) => pending(a) || paymentTime(a) >= now - DAY_MS),
+  };
 }
 
 export function createStore(dir) {
@@ -45,7 +69,7 @@ export function createStore(dir) {
       return JSON.parse(await readFile(fileFor(address), "utf8"));
     } catch (err) {
       if (err.code !== "ENOENT") throw err;
-      return { address, createdAt: new Date().toISOString(), limits: DEFAULT_LIMITS, activity: [], agents: [] };
+      return freshUser(address);
     }
   }
 

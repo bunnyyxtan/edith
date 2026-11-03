@@ -32,8 +32,8 @@ import { describeRequest, loadRecords, toOutcome, userNamespace } from "./memory
 import { UnsafeUrlError } from "./net.mjs";
 import { PaymentError, transactionDigest } from "./payment.mjs";
 import { memoryPlans } from "./state.mjs";
-import { newActivityId, spentToday, withActivity } from "./store.mjs";
-import { withRetry } from "./sui.mjs";
+import { newActivityId, paymentHistoryReady, spentToday, withActivity } from "./store.mjs";
+import { provePaymentInvalidated, withRetry } from "./sui.mjs";
 import { HttpError, cookieHeader, createLimiter, openStream, readCookie, readJson, securityHeaders, send, serveStatic } from "./http.mjs";
 
 const PLAN_TTL_MS = 4 * 60_000; // inside the provider's 5-minute challenge window
@@ -109,7 +109,7 @@ function plannedItem(planned, base) {
 function failedItem(err, sent) {
   if (err instanceof SettleError) {
     const state = { check: "failed", refused: "refused", uncertain: "uncertain", remember: "paid" }[err.stage] ?? (sent ? "uncertain" : "failed");
-    return { state, error: err.message, ...(err.stage === "remember" ? { memory: "failed" } : {}) };
+    return { state, error: err.message, ...(err.stage === "refused" ? { chainFailed: true } : {}), ...(err.stage === "remember" ? { memory: "failed" } : {}) };
   }
   return sent
     ? { state: "uncertain", error: "Something interrupted the payment after it was sent. Edith will check Sui before anything else happens." }
@@ -140,11 +140,17 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
   }
 
   const setItem = (address, id, fields) => store.update(address, (user) => withActivity(user, id, fields)).then((u) => u.activity.find((a) => a.id === id));
+  const requirePaymentHistory = (user) => {
+    if (!paymentHistoryReady(user)) throw new HttpError(409, "Payments are paused until this wallet's historical payments have been reconciled. Contact the EDITH operator. Nothing was paid.");
+  };
 
   // Quotes that outlived their window are shown as expired, and a settlement that has run longer than any
   // function can (it was cut off) as uncertain, whatever the record last said.
   // An agent's request outlives its 4-minute quote: it waits for the owner, and a fresh price is fetched on review.
   function current(item) {
+    if (item.state === "refused" && item.digest && !item.chainFailed && !item.invalidationProof) {
+      return { ...item, state: "uncertain", error: "This signed payment may still settle. Check Sui before paying again." };
+    }
     if (item.state === "awaiting" && !(Date.parse(item.expiresAt) > Date.now())) {
       const waiting = item.source?.kind === "agent" && Date.now() - Date.parse(item.at) < APPROVAL_WINDOW_MS;
       return waiting ? { ...item, stale: true } : { ...item, state: "expired" };
@@ -159,6 +165,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
   async function planRequest(address, target, { source, emit = () => {}, id = newActivityId(), at = new Date().toISOString() }) {
     const user = await store.read(address);
     const planned = await edithFor(address).plan(target, { limits: bigLimits(user.limits), spentMist: spentToday(user) }, emit);
+    if (planned.action === "pay") requirePaymentHistory(user);
     const base = { at, url: target, request: words(planned.context.key), provider: planned.context.provider, context: planned.context, source, stale: false };
     const item = plannedItem(planned, base);
     if (planned.action === "pay") await plans.put(id, address, planned, Date.parse(item.expiresAt));
@@ -236,12 +243,21 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
   }
 
   // Counts this payment against the limits and marks it settling, in one write.
-  function reserve(address, id, amount, digest) {
+  function reserve(address, id, planned, digest, transaction) {
+    const { amount, payTo } = planned.terms;
     return store.update(address, (user) => {
+      requirePaymentHistory(user);
       const limits = bigLimits(user.limits);
       if (amount > limits.perCallMist) throw new HttpError(409, "This payment is over your limit per payment now. Nothing was paid.");
       if (spentToday(user) + amount > limits.dailyMist) throw new HttpError(409, "This payment would take you past your 24-hour limit. Nothing was paid.");
-      return withActivity(user, id, { state: "settling", digest, settlingAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      return withActivity(user, id, {
+        at: user.activity.find((a) => a.id === id)?.at ?? now,
+        state: "settling", digest, settlingAt: now, amountMist: String(amount),
+        // Unsigned BCS bytes bind recovery evidence to this exact digest. Never store the signature.
+        recovery: { network, transaction },
+        terms: { payTo, amount: String(amount) }, context: planned.context, url: planned.url, provider: planned.context.provider,
+      });
     });
   }
 
@@ -254,7 +270,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     let digest;
     try {
       digest = transactionDigest(fromBase64(transaction));
-      await reserve(address, id, entry.planned.terms.amount, digest);
+      await reserve(address, id, entry.planned, digest, transaction);
     } catch (err) {
       await plans.release(id);
       throw err instanceof HttpError ? err : new HttpError(400, "Your wallet returned a payment Edith couldn't read. Nothing was paid.");
@@ -262,20 +278,21 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
 
     const emit = openStream(res);
     let sent = false;
+    let verifiedAt;
     const track = (event) => {
       if (event.step === "paying") sent = true;
       if (event.step === "verified") {
-        setItem(address, id, { state: "paid", memory: "saving", verifiedAt: new Date(event.timestampMs ?? Date.now()).toISOString() }).catch((err) => console.error("activity write failed:", err));
+        verifiedAt = new Date(event.timestampMs ?? Date.now()).toISOString();
       }
       emit(event);
     };
     try {
       const settled = await edithFor(address).settle(entry.planned, { transaction, signature }, track);
-      const item = await setItem(address, id, { state: "paid", result: settled.result, problem: settled.problem, status: settled.status, body: preview(settled.body), blobId: settled.blobId, memory: "saved", error: null });
+      const item = await setItem(address, id, { state: "paid", verifiedAt, result: settled.result, problem: settled.problem, status: settled.status, body: preview(settled.body), blobId: settled.blobId, memory: "saved", error: null });
       emit({ step: "settled", activity: item });
     } catch (err) {
       console.error("settle failed:", err);
-      const item = await setItem(address, id, failedItem(err, sent));
+      const item = await setItem(address, id, { ...failedItem(err, sent), ...(verifiedAt ? { verifiedAt } : {}) });
       emit({ step: "error", message: item.error, activity: item });
     } finally {
       await plans.drop(id).catch((err) => console.error("plan cleanup failed:", err));
@@ -283,12 +300,21 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     res.end();
   }
 
-  async function recheck(address, id) {
+  async function recheck(address, id, conflictingDigest) {
     const item = (await store.read(address)).activity.find((a) => a.id === id);
     if (!item) throw new HttpError(404, "Edith has no record of this payment.");
     if (current(item).state !== "uncertain") return { activity: current(item) };
     const terms = { payTo: item.terms.payTo, amount: BigInt(item.terms.amount) };
     const result = await edithFor(address).reconcile({ context: item.context, terms, digest: item.digest });
+    if (result.final) return { activity: await setItem(address, id, { state: "refused", chainFailed: true, error: "Sui confirmed that this transaction failed. The provider was not paid; gas may have been charged.", checkedAt: new Date().toISOString() }) };
+    if (result.verification.status === "not_found") {
+      const proof = await provePaymentInvalidated(sui, { ...item, network }, conflictingDigest);
+      if (proof) return { activity: await setItem(address, id, {
+        state: "refused", invalidationProof: proof,
+        error: "Sui confirms that another transaction consumed this payment's gas input. This signed payment can no longer execute.",
+        checkedAt: new Date().toISOString(),
+      }) };
+    }
     if (!result.paid) return { activity: current(await setItem(address, id, { state: "uncertain", checkedAt: new Date().toISOString() })) };
     return { activity: await setItem(address, id, { state: "paid", result: "failure", problem: result.problem, blobId: result.blobId, memory: "saved", error: null, verifiedAt: new Date(result.verification.timestampMs ?? Date.now()).toISOString() }) };
   }
@@ -368,8 +394,11 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
 
     "POST /api/requests/:id/recheck": async (req, res, url, id) => {
       const address = signedIn(req);
-      await readBody(req);
-      return recheck(address, id);
+      const { conflictingDigest } = await readBody(req);
+      if (conflictingDigest !== undefined && (typeof conflictingDigest !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(conflictingDigest))) {
+        throw new HttpError(400, "Invalid Sui transaction digest.");
+      }
+      return recheck(address, id, conflictingDigest);
     },
 
     "POST /api/requests/:id/requote": async (req, res, url, id) => {

@@ -35,13 +35,21 @@ test("verifyPayment sums SUI credited to the payee", async () => {
     { address: "0xother", coinType: "0x2::sui::SUI", amount: "999999" },
   ]));
   const result = await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1000n });
-  assert.deepEqual(result, { ok: true, received: 1000n, sender: "0xpayer", timestampMs: 123 });
+  assert.deepEqual(result, { ok: true, status: "success", received: 1000n, sender: "0xpayer", timestampMs: 123 });
   assert.equal((await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1001n })).ok, false);
 });
 
 test("verifyPayment rejects failed transactions", async () => {
   const client = clientReturning(async () => tx([{ address: PAY_TO, coinType: "0x2::sui::SUI", amount: "1000" }], false));
-  assert.equal((await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1n })).ok, false);
+  const result = await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1n });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "failed");
+});
+
+test("a digest not found on chain stays distinguishable from a finalized failure", async () => {
+  const result = await verifyPayment(clientReturning(async () => { throw rpcError("NOT_FOUND"); }), "d", { payTo: PAY_TO, minAmount: 1n });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "not_found");
 });
 
 test("checkTransfer reports a transfer Sui refuses, and lets outages through", async () => {

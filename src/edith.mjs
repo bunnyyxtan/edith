@@ -10,6 +10,7 @@ import { NAMESPACE, describeRequest, loadHistory, rememberEvent } from "./memory
 import { parseTerms, paymentHeader, transactionDigest } from "./payment.mjs";
 import { classifyResponse, decide } from "./policy.mjs";
 import { checkTransfer, verifyPayment } from "./sui.mjs";
+import { createProviderFetch } from "./net.mjs";
 
 export const MAX_PRICE_MIST = 10_000_000n; // hard ceiling per call, above any limit a payer can set: 0.01 SUI
 const REDEEM_ATTEMPTS = 4;
@@ -22,7 +23,7 @@ export class SettleError extends Error {
     super(message, { cause });
     this.stage = stage;
     this.digest = digest ?? null;
-    this.paid = paid;
+    this.paid = stage === "uncertain" ? null : paid;
   }
 }
 
@@ -53,7 +54,7 @@ function checkLimits(price, { limits, spentMist = 0n }) {
   return null;
 }
 
-export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE, isUseful = isUsefulQuote, fetch = globalThis.fetch }) {
+export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE, isUseful = isUsefulQuote, fetch = createProviderFetch() }) {
   const declined = async (context, decision) => {
     await rememberEvent(memory, { event: "avoided", ...context, saved: decision.saved ?? 0, reason: decision.reason }, { wait: false, namespace });
     return { action: "skip", context, decision };
@@ -125,12 +126,11 @@ export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE
     // Whatever the provider said, Sui decides whether money moved. Edith checks it independently through Tatum.
     const body = response ? await response.json().catch(() => null) : null;
     const verification = await verifyPayment(sui, digest, { payTo: terms.payTo, minAmount: terms.amount });
-    if (!verification.ok && !response) {
-      throw new SettleError("uncertain", "The provider didn't answer, and your payment hasn't appeared on Sui yet.", { digest });
-    }
     if (!verification.ok) {
-      const why = body?.error ? `: ${body.error}` : "";
-      throw new SettleError("refused", `The provider refused the payment${why}. Nothing was paid.`, { digest });
+      if (verification.status === "failed") {
+        throw new SettleError("refused", "Sui confirmed that this transaction failed. The provider was not paid; gas may have been charged.", { digest });
+      }
+      throw new SettleError("uncertain", "Your signed payment is with the provider, but Sui has not confirmed the payment. It may still settle; its amount remains reserved against your limit.", { digest });
     }
     emit({ step: "verified", digest, received: verification.received, timestampMs: verification.timestampMs });
 
@@ -144,7 +144,7 @@ export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE
   // A payment whose fate was unknown: look again, and if it landed after all, remember it went unanswered.
   async function reconcile({ context, terms, digest }, emit = () => {}) {
     const verification = await verifyPayment(sui, digest, { payTo: terms.payTo, minAmount: terms.amount });
-    if (!verification.ok) return { paid: false, verification };
+    if (!verification.ok) return { paid: false, final: verification.status === "failed", verification };
     const blobId = await remember(outcomeRecord(context, terms, digest, UNANSWERED), digest, emit);
     return { paid: true, verification, blobId, problem: UNANSWERED };
   }

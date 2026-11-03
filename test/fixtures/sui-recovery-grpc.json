@@ -1,0 +1,46 @@
+{
+  "description": "Synthetic offline sui.rpc.v2 protobuf-JSON fixture for @mysten/sui 2.38.0; not Mainnet evidence. Tests round-trip it through the installed generated protobuf codecs and real SuiGrpcClient Core parser.",
+  "objects": {
+    "objects": [{
+      "object": {
+        "objectId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "version": "2",
+        "digest": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd",
+        "owner": { "kind": "ADDRESS", "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "objectType": "0x2::coin::Coin<0x2::sui::SUI>",
+        "previousTransaction": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd"
+      }
+    }]
+  },
+  "transaction": {
+    "transaction": {
+      "digest": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd",
+      "checkpoint": "9007199254740993",
+      "timestamp": "2026-11-03T00:00:00Z",
+      "effects": {
+        "version": 2,
+        "status": { "success": true },
+        "epoch": "123",
+        "gasUsed": { "computationCost": "1000", "storageCost": "100", "storageRebate": "90", "nonRefundableStorageFee": "10" },
+        "transactionDigest": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd",
+        "lamportVersion": "2",
+        "changedObjects": [{
+          "objectId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "inputState": "INPUT_OBJECT_STATE_EXISTS",
+          "inputVersion": "1",
+          "inputDigest": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd",
+          "inputOwner": { "kind": "ADDRESS", "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          "outputState": "OUTPUT_OBJECT_STATE_OBJECT_WRITE",
+          "outputVersion": "2",
+          "outputDigest": "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd",
+          "outputOwner": { "kind": "ADDRESS", "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          "idOperation": "NONE"
+        }],
+        "dependencies": [],
+        "unchangedConsensusObjects": []
+      },
+      "signatures": [],
+      "balanceChanges": []
+    }
+  }
+}

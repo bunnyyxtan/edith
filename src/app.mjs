@@ -6,7 +6,7 @@ import pg from "pg";
 import { createHandler } from "./api.mjs";
 import { createAuth } from "./auth.mjs";
 import { createMemory } from "./memory.mjs";
-import { createProviderFetch } from "./net.mjs";
+import { createProviderFetch, isLocalOrigin } from "./net.mjs";
 import { createProvider } from "./server.mjs";
 import { migrate, pgDb, pgLedger, pgLimiter, pgNonces, pgPlans, pgStore } from "./state.mjs";
 import { createStore } from "./store.mjs";
@@ -25,6 +25,10 @@ export async function buildHandler(env = process.env, { port } = {}) {
   if (secure && !serverless && !env.DATABASE_URL && !env.DATA_DIR) missing.push("DATABASE_URL or DATA_DIR");
   if (serverless && !secure) missing.push("PUBLIC_ORIGIN (https)");
   if (missing.length) throw new Error(`Edith is not configured for this deployment. Set: ${missing.join(", ")}`);
+  const allowPrivate = env.ALLOW_PRIVATE_PROVIDERS === "1";
+  if (allowPrivate && (serverless || secure || env.NODE_ENV === "production" || !isLocalOrigin(origin))) {
+    throw new Error("ALLOW_PRIVATE_PROVIDERS is only permitted for local development, never a public deployment.");
+  }
 
   const sui = tatumSuiClient();
   let durable = {};
@@ -53,7 +57,7 @@ export async function buildHandler(env = process.env, { port } = {}) {
     // The demo provider is reached at its public address; locally it is mapped straight to this process.
     providerFetch: createProviderFetch({
       demo: { origin, prefix: "/demo", target: serverless ? origin : `http://127.0.0.1:${port ?? 4030}` },
-      allowPrivate: env.ALLOW_PRIVATE_PROVIDERS === "1",
+      allowPrivate,
     }),
     demo: { ...provider, name: "Quote Desk", baseUrl: `${origin}/demo/quote`, priceMist: provider.price },
     staticDir: env.STATIC_DIR ?? "web/dist",

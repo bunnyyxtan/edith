@@ -6,20 +6,22 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { TransactionDataBuilder } from "@mysten/sui/transactions";
+import { fromBase64 } from "@mysten/sui/utils";
 import { MemWalMock } from "@mysten-incubation/memwal";
 import { createApi, present } from "../src/api.mjs";
 import { createAuth } from "../src/auth.mjs";
 import { createProviderFetch } from "../src/net.mjs";
 import { createLedger, createPaywall } from "../src/paywall.mjs";
 import { createProviderHandler } from "../src/server.mjs";
-import { createStore } from "../src/store.mjs";
+import { createStore, withActivity } from "../src/store.mjs";
 import { settlePayment } from "../src/sui.mjs";
 import { fakeChain, signedTransfer } from "./chain.mjs";
 
 const PAY_TO = `0x${"d".repeat(64)}`;
 const tmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
 
-async function start(t, { staticDir } = {}) {
+async function start(t, { staticDir, providerFetch = createProviderFetch({ allowPrivate: true }) } = {}) {
   const chain = fakeChain();
   const paywall = createPaywall({
     secret: "p", network: "mainnet", payTo: PAY_TO, price: 1_000_000n,
@@ -27,11 +29,12 @@ async function start(t, { staticDir } = {}) {
     settlePayment: (payment, terms) => settlePayment(chain.client, payment, terms),
   });
   const demo = { name: "Quote Desk", baseUrl: null, priceMist: 1_000_000n, payTo: PAY_TO, handler: createProviderHandler(paywall, "/demo") };
+  const store = createStore(tmp("edith-users-"));
   const server = createApi({
     sui: chain.client, network: "mainnet", memory: new MemWalMock({ namespace: "edith" }),
-    store: createStore(tmp("edith-users-")),
+    store,
     auth: createAuth({ secret: "s", origin: "http://edith.test", network: "mainnet", client: chain.client }),
-    providerFetch: createProviderFetch({ allowPrivate: true }),
+    providerFetch,
     demo, staticDir, origin: "http://edith.test",
   }).listen(0);
   t.after(() => server.close());
@@ -78,8 +81,161 @@ async function start(t, { staticDir } = {}) {
     return { keypair, address, cookie, as, ask, sign, pay, message, signature, connectAgent };
   }
 
-  return { base, call, events, person, chain, demo };
+  return { base, call, events, person, chain, demo, store };
 }
+
+test("activity eviction cannot reset the API daily limit or approve a previously quoted payment", async (t) => {
+  const { person, store, events } = await start(t);
+  const alice = await person();
+  await alice.as("PUT", "/api/limits", { perCallMist: "1000000", dailyMist: "1000000" });
+  const first = (await alice.ask("SUI")).activity;
+  const second = (await alice.ask("WAL")).activity;
+  assert.equal((await events(await alice.pay(first))).at(-1).activity.state, "paid");
+  await store.update(alice.address, (user) => {
+    for (let i = 0; i < 210; i++) user = withActivity(user, `free-${i}`, { at: new Date(Date.now() + i + 1).toISOString(), state: "free" });
+    return user;
+  });
+  const me = await (await alice.as("GET", "/api/me")).json();
+  assert.equal(me.activity.some((a) => a.id === first.id), false);
+  assert.equal(me.spentMist, "1000000");
+  assert.equal((await alice.ask("BTC")).activity.state, "blocked");
+  assert.equal((await alice.pay(second)).status, 409, "settlement rechecks the durable ledger");
+});
+
+test("an evicted awaiting quote still reserves its full amount when signed", async (t) => {
+  const { person, store, events } = await start(t);
+  const alice = await person();
+  const item = (await alice.ask("SUI")).activity;
+  await store.update(alice.address, (user) => {
+    for (let i = 0; i < 210; i++) user = withActivity(user, `free-${i}`, { at: new Date(Date.now() - 1).toISOString(), state: "free" });
+    // Force the old quote out of display history, as an agent flood would do.
+    return { ...user, activity: user.activity.filter((a) => a.id !== item.id) };
+  });
+  const result = (await events(await alice.pay(item))).at(-1);
+  assert.equal(result.activity.state, "paid");
+  assert.equal(result.activity.amountMist, "1000000");
+  assert.equal((await (await alice.as("GET", "/api/me")).json()).spentMist, "1000000");
+});
+
+test("provider refusal stays uncertain through activity churn and can be reconciled after late settlement", async (t) => {
+  const network = createProviderFetch({ allowPrivate: true });
+  const { person, chain, events, store } = await start(t, {
+    providerFetch: (url, init) => init?.headers?.["x-payment"]
+      ? new Response('{"error":"refused"}', { status: 403 }) : network(url, init),
+  });
+  const alice = await person();
+  await alice.as("PUT", "/api/limits", { perCallMist: "1000000", dailyMist: "1000000" });
+  const item = (await alice.ask("SUI")).activity;
+  const signed = await alice.sign(item);
+  const result = (await events(await alice.pay(item, signed))).at(-1);
+  assert.equal(result.activity.state, "uncertain");
+  assert.doesNotMatch(result.message, /Nothing was paid/);
+  await store.update(alice.address, (user) => {
+    for (let i = 0; i < 210; i++) user = withActivity(user, `free-${i}`, { at: new Date(Date.now() + i).toISOString(), state: "free" });
+    return user;
+  });
+  const me = await (await alice.as("GET", "/api/me")).json();
+  assert.equal(me.spentMist, "1000000");
+  assert.ok(me.activity.some((a) => a.id === item.id), "the existing recheck UI remains available");
+  assert.equal((await alice.ask("WAL")).activity.state, "blocked");
+  chain.land(signed.digest);
+  const reconciled = await (await alice.as("POST", `/api/requests/${item.id}/recheck`)).json();
+  assert.equal(reconciled.activity.state, "paid");
+  assert.equal((await (await alice.as("GET", "/api/me")).json()).spentMist, "1000000");
+});
+
+test("a finalized chain failure releases an uncertain API reservation", async (t) => {
+  const network = createProviderFetch({ allowPrivate: true });
+  const { person, chain, events } = await start(t, {
+    providerFetch: (url, init) => init?.headers?.["x-payment"] ? new Response("{}", { status: 400 }) : network(url, init),
+  });
+  const alice = await person();
+  const item = (await alice.ask("SUI")).activity;
+  const signed = await alice.sign(item);
+  assert.equal((await events(await alice.pay(item, signed))).at(-1).activity.state, "uncertain");
+  chain.overrides[signed.digest] = { success: false };
+  chain.land(signed.digest);
+  const result = await (await alice.as("POST", `/api/requests/${item.id}/recheck`)).json();
+  assert.equal(result.activity.state, "refused");
+  assert.equal(result.activity.chainFailed, true);
+  assert.equal((await (await alice.as("GET", "/api/me")).json()).spentMist, "0");
+});
+
+test("both app and agent requests reject public HTTP providers", async (t) => {
+  const { person, events, chain } = await start(t);
+  const alice = await person();
+  const result = (await events(await alice.as("POST", "/api/requests", { url: "http://8.8.8.8/quote" }))).at(-1);
+  assert.equal(result.step, "error");
+  assert.match(result.message, /HTTPS/);
+  const bot = await alice.connectAgent();
+  const rejected = await bot.call("POST", "/v1/requests", { url: "http://8.8.8.8/quote" });
+  assert.equal(rejected.status, 422);
+  assert.match((await rejected.json()).error, /HTTPS/);
+  assert.equal(chain.calls.execute, 0);
+});
+
+test("legacy history holds new payments and old quotes without blocking free requests or fabricating history", async (t) => {
+  const transport = createProviderFetch({ allowPrivate: true });
+  const { person, store, chain, demo, events } = await start(t, {
+    providerFetch: (url, init) => String(url).endsWith("FREE") ? new Response('{"free":true}') : transport(url, init),
+  });
+  const alice = await person();
+  const quote = (await alice.ask("SUI")).activity;
+  await store.update(alice.address, (user) => {
+    const { paymentHistory, ...legacy } = user;
+    return legacy;
+  });
+  assert.match((await alice.ask("WAL")).message, /historical payments/);
+  const rejected = await alice.pay(quote);
+  assert.equal(rejected.status, 409);
+  assert.match((await rejected.json()).error, /historical payments/);
+  const bot = await alice.connectAgent();
+  assert.equal((await bot.call("POST", "/v1/requests", { url: `${demo.baseUrl}?ticker=BTC` })).status, 422);
+  await alice.as("PUT", "/api/limits", { perCallMist: "1000000", dailyMist: "2000000", paymentHistory: { version: 1, basis: "created-with-guards" } });
+  assert.equal((await alice.ask("FREE")).activity.state, "free");
+  assert.equal((await store.read(alice.address)).paymentHistory, undefined, "ordinary writes never certify legacy history");
+  assert.equal(chain.calls.execute, 0);
+  // Fixture for an operator-reviewed empty history, not an automated migration.
+  await store.update(alice.address, (user) => ({ ...user, paymentHistory: {
+    version: 1, basis: "reconciled", evidenceRef: "test-fixture/complete-empty-history", reviewedAt: new Date().toISOString(),
+  } }));
+  assert.equal((await events(await alice.pay(quote))).at(-1).activity.state, "paid", "a held quote was not consumed");
+});
+
+test("an uncertain payment releases only after exact checkpointed gas consumption and keeps the proof", async (t) => {
+  const transport = createProviderFetch({ allowPrivate: true });
+  const { person, chain, store, events } = await start(t, {
+    providerFetch: (url, init) => init?.headers?.["x-payment"] ? new Response("{}", { status: 403 }) : transport(url, init),
+  });
+  const alice = await person();
+  const bob = await person();
+  const item = (await alice.ask("SUI")).activity;
+  const signed = await alice.sign(item);
+  assert.equal((await events(await alice.pay(item, signed))).at(-1).activity.state, "uncertain");
+  const stored = (await store.read(alice.address)).activity.find((a) => a.id === item.id);
+  assert.deepEqual(stored.recovery, { network: "mainnet", transaction: signed.transaction });
+  assert.equal(JSON.stringify(await store.read(alice.address)).includes(signed.signature), false);
+  const gas = TransactionDataBuilder.fromBytes(fromBase64(signed.transaction)).gasData.payment[0];
+  const conflict = "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd";
+  const tx = { digest: conflict, checkpoint: null, effects: { transactionDigest: conflict, changedObjects: [{
+    objectId: gas.objectId, inputState: "Exists", inputVersion: gas.version, inputDigest: gas.digest,
+    inputOwner: { $kind: "AddressOwner", AddressOwner: alice.address }, outputState: "ObjectWrite", outputVersion: "2",
+  }] } };
+  const getTransaction = chain.client.core.getTransaction;
+  chain.client.core.getTransaction = (options) => options.digest === conflict ? { Transaction: tx } : getTransaction(options);
+  assert.equal((await bob.as("POST", `/api/requests/${item.id}/recheck`, { conflictingDigest: conflict })).status, 404);
+  const recheck = async () => (await alice.as("POST", `/api/requests/${item.id}/recheck`, { conflictingDigest: conflict })).json();
+  assert.equal((await recheck()).activity.state, "uncertain", "uncheckpointed consumption is insufficient");
+  assert.equal((await (await alice.as("GET", "/api/me")).json()).spentMist, "1000000");
+  tx.checkpoint = "345";
+  const result = await recheck();
+  assert.equal(result.activity.state, "refused");
+  assert.equal(result.activity.invalidationProof.checkpoint, "345");
+  assert.equal(result.activity.chainFailed, undefined, "invalidation is distinct from execution failure");
+  await alice.ask("FREE"); // another ordinary write must not resurrect the reservation
+  assert.equal((await (await alice.as("GET", "/api/me")).json()).spentMist, "0");
+  assert.equal((await recheck()).activity.state, "refused");
+});
 
 test("signing in proves the wallet, and the signed message works once", async (t) => {
   const { call, person } = await start(t);
