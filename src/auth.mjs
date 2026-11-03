@@ -11,6 +11,17 @@ export const ADDRESS_RE = /^0x[0-9a-f]{64}$/;
 
 export class AuthError extends Error {}
 
+// Each sign-in message works once; this in-memory record serves a single process (tests, local runs).
+function memoryNonces(now) {
+  const spent = new Map();
+  return async (nonce, expiresAtMs) => {
+    for (const [n, exp] of spent) if (exp < now()) spent.delete(n);
+    if (spent.has(nonce)) return false;
+    spent.set(nonce, expiresAtMs);
+    return true;
+  };
+}
+
 const mac = (secret, payload) => createHmac("sha256", secret).update(payload).digest("base64url");
 
 // Sealed tokens carry a kind, so a sign-in nonce can never pass for a session or the reverse.
@@ -30,9 +41,9 @@ function unseal(secret, token, kind, now) {
 }
 
 // client: a Sui client, needed to verify zkLogin and passkey wallets' signatures.
-export function createAuth({ secret, origin, network, client, now = Date.now }) {
+// spendNonce(nonce, expiresAtMs) -> false if already spent; durable (state.mjs) when deployed.
+export function createAuth({ secret, origin, network, client, now = Date.now, spendNonce = memoryNonces(now) }) {
   const host = new URL(origin).host;
-  const spent = new Map(); // nonce -> expiry; each sign-in message works once (ponytail: one instance)
 
   const render = ({ a, iat, exp }, nonce) => [
     `${host} wants you to sign in with your Sui account:`,
@@ -60,14 +71,13 @@ export function createAuth({ secret, origin, network, client, now = Date.now }) 
     const claims = nonce && unseal(secret, nonce, "sign-in", now());
     if (!claims) throw new AuthError("This sign-in request expired. Connect again to get a fresh one.");
     if (render(claims, nonce) !== message) throw new AuthError("The signed message doesn't match the sign-in request.");
-    if (spent.has(nonce)) throw new AuthError("This sign-in request was already used. Connect again.");
     try {
       await verifyPersonalMessageSignature(new TextEncoder().encode(message), String(signature ?? ""), { address: claims.a, client });
     } catch {
       throw new AuthError("Your wallet's signature couldn't be verified for this address.");
     }
-    for (const [n, exp] of spent) if (exp < now()) spent.delete(n);
-    spent.set(nonce, claims.exp);
+    // Spent only after the signature checks out, and atomically: a second use of this message fails here.
+    if (!(await spendNonce(nonce, claims.exp))) throw new AuthError("This sign-in request was already used. Connect again.");
     return { address: claims.a, cookie: seal(secret, { k: "session", a: claims.a, exp: now() + SESSION_TTL_MS }) };
   }
 

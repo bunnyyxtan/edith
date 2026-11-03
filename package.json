@@ -24,9 +24,11 @@
     "@mysten-incubation/memwal": "0.1.12",
     "@mysten/sui": "2.38.0",
     "@mysten/wallet-standard": "0.21.34",
-    "@protobuf-ts/grpc-transport": "2.11.1"
+    "@protobuf-ts/grpc-transport": "2.11.1",
+    "pg": "8.23.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
     "vite": "8.3.4"
   }
 }

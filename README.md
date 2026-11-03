@@ -117,7 +117,13 @@ npm run build           # builds the site and app into web/dist
 npm start               # site, app, API and demo provider on PORT (4030)
 ```
 
-### Deploying
+### Deploying on Vercel
+
+`vercel.json` serves the site and app from `web/dist` and routes `/api`, `/v1` and `/demo` to one function (`api/edith.mjs`). All state is in Neon Postgres (`src/state.mjs`): wallet records, pending approvals, the replay ledger, sign-in nonces and rate limits, each claimed or updated atomically, so any number of instances can serve Edith. Tables are created on first start.
+
+Set in the Vercel project: the Neon integration (`DATABASE_URL`), `PUBLIC_ORIGIN` (the production https URL), `SESSION_SECRET`, `SERVER_CHALLENGE_SECRET`, `TATUM_API_KEY`, `MEMWAL_PRIVATE_KEY`, `MEMWAL_ACCOUNT_ID`, `SUI_NETWORK=mainnet`, `SERVER_SUI_ADDRESS`, `NODEJS_HELPERS=0`. Edith refuses to start while any is missing.
+
+### Deploying with Docker
 
 The `Dockerfile` builds the site and app and runs everything in one process on port 4030, as an unprivileged user. Behind an https proxy:
 

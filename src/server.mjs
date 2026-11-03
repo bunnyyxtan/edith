@@ -55,7 +55,7 @@ export function createProviderHandler(paywall, prefix = "") {
 export const createApp = (paywall, prefix) => createServer(createProviderHandler(paywall, prefix));
 
 // The demo provider with payments settled and verified through Tatum.
-export async function createProvider({ env = process.env, prefix = "" } = {}) {
+export async function createProvider({ env = process.env, prefix = "", ledger } = {}) {
   const { tatumSuiClient, settlePayment, NETWORK } = await import("./sui.mjs");
   const payTo = env.SERVER_SUI_ADDRESS;
   if (!payTo) throw new Error("SERVER_SUI_ADDRESS is required");
@@ -67,7 +67,7 @@ export async function createProvider({ env = process.env, prefix = "" } = {}) {
     payTo,
     price: PRICE_MIST,
     // Kept with the rest of the persistent data, so replay protection survives a redeploy.
-    ledger: createLedger(env.LEDGER_PATH ?? `${env.DATA_DIR ?? "data"}/used-digests.txt`),
+    ledger: ledger ?? createLedger(env.LEDGER_PATH ?? `${env.DATA_DIR ?? "data"}/used-digests.txt`),
     settlePayment: (signed, terms) => settlePayment(client, signed, terms),
   });
   return { handler: createProviderHandler(paywall, prefix), payTo, price: PRICE_MIST };

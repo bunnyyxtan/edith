@@ -24,7 +24,6 @@
 //   POST /v1/requests/:id/cancel      withdraw a request still waiting for approval
 // /demo/* is the bundled paid API; everything else serves the built web app.
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
 import { fromBase64 } from "@mysten/sui/utils";
 import { MAX_AGENTS, matchAgent, newAgent, parseAgentToken, publicAgent, validAgentName } from "./agents.mjs";
 import { AuthError, SESSION_COOKIE, SESSION_TTL_MS } from "./auth.mjs";
@@ -32,12 +31,14 @@ import { MAX_PRICE_MIST, SettleError, createEdith } from "./edith.mjs";
 import { describeRequest, loadRecords, toOutcome, userNamespace } from "./memory.mjs";
 import { UnsafeUrlError } from "./net.mjs";
 import { PaymentError, transactionDigest } from "./payment.mjs";
+import { memoryPlans } from "./state.mjs";
 import { newActivityId, spentToday, withActivity } from "./store.mjs";
 import { withRetry } from "./sui.mjs";
 import { HttpError, cookieHeader, createLimiter, openStream, readCookie, readJson, securityHeaders, send, serveStatic } from "./http.mjs";
 
 const PLAN_TTL_MS = 4 * 60_000; // inside the provider's 5-minute challenge window
 const APPROVAL_WINDOW_MS = 24 * 60 * 60_000; // how long an agent's request waits for its owner
+const SETTLING_STALE_MS = 6 * 60_000; // longer than any function runs (5 min): a settlement this old was cut off
 export const MAX_DAILY_MIST = 1_000_000_000n; // 1 SUI: the highest daily limit a person can set
 const BODY_PREVIEW_CHARS = 2000;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -115,11 +116,16 @@ function failedItem(err, sent) {
     : { state: "failed", error: "Something interrupted the payment before it was sent. Nothing was paid." };
 }
 
-export function createApi({ sui, memory, network, store, auth, providerFetch, demo, staticDir, origin = "", secure = false, trustProxy = false }) {
-  const plans = new Map(); // activity id -> { planned, address, state, expires }
-  // ponytail: plans live in memory on one instance; a restart drops live quotes (agent requests re-quote on review).
-  const signInLimit = createLimiter({ limit: 20, windowMs: 60_000 });
-  const requestLimit = createLimiter({ limit: 30, windowMs: 60_000 });
+// plans: pending approvals; limiter(name, { limit, windowMs }) -> async (key) -> allowed. Both default to one
+// process's memory (tests, local runs); a deployment passes the durable ones from state.mjs.
+const memoryLimiter = (name, options) => {
+  const limit = createLimiter(options);
+  return async (key) => limit(key);
+};
+
+export function createHandler({ sui, memory, network, store, auth, providerFetch, demo, staticDir, origin = "", secure = false, trustProxy = false, plans = memoryPlans(), limiter = memoryLimiter }) {
+  const signInLimit = limiter("sign-in", { limit: 20, windowMs: 60_000 });
+  const requestLimit = limiter("requests", { limit: 30, windowMs: 60_000 });
 
   const edithFor = (address) => createEdith({ sui, memory, network, payer: address, namespace: userNamespace(address), fetch: providerFetch });
   // Same-origin check against the public origin when it is configured; behind a proxy, Host may be internal.
@@ -135,15 +141,15 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
   const setItem = (address, id, fields) => store.update(address, (user) => withActivity(user, id, fields)).then((u) => u.activity.find((a) => a.id === id));
 
-  // Quotes that outlived their window are shown as expired, and a settlement no longer in progress
-  // (the server restarted mid-payment) as uncertain, whatever the file last said.
+  // Quotes that outlived their window are shown as expired, and a settlement that has run longer than any
+  // function can (it was cut off) as uncertain, whatever the record last said.
   // An agent's request outlives its 4-minute quote: it waits for the owner, and a fresh price is fetched on review.
   function current(item) {
-    if (item.state === "awaiting" && !(plans.get(item.id)?.expires > Date.now())) {
+    if (item.state === "awaiting" && !(Date.parse(item.expiresAt) > Date.now())) {
       const waiting = item.source?.kind === "agent" && Date.now() - Date.parse(item.at) < APPROVAL_WINDOW_MS;
       return waiting ? { ...item, stale: true } : { ...item, state: "expired" };
     }
-    if (item.state === "settling" && !plans.has(item.id)) {
+    if (item.state === "settling" && Date.now() - Date.parse(item.settlingAt ?? item.at) > SETTLING_STALE_MS) {
       return { ...item, state: "uncertain", error: "Edith was interrupted while this payment settled. Check Sui to see whether it went through." };
     }
     return item;
@@ -155,10 +161,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     const planned = await edithFor(address).plan(target, { limits: bigLimits(user.limits), spentMist: spentToday(user) }, emit);
     const base = { at, url: target, request: words(planned.context.key), provider: planned.context.provider, context: planned.context, source, stale: false };
     const item = plannedItem(planned, base);
-    if (planned.action === "pay") {
-      for (const [key, entry] of plans) if (entry.state === "ready" && entry.expires < Date.now()) plans.delete(key);
-      plans.set(id, { planned, address, state: "ready", expires: Date.parse(item.expiresAt) });
-    }
+    if (planned.action === "pay") await plans.put(id, address, planned, Date.parse(item.expiresAt));
     return setItem(address, id, item);
   }
 
@@ -168,7 +171,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
   async function startRequest(req, res, address) {
     const target = requestUrl((await readBody(req)).url);
-    if (!requestLimit(address)) throw new HttpError(429, "That's a lot of requests in a minute. Wait a moment, then try again.");
+    if (!(await requestLimit(address))) throw new HttpError(429, "That's a lot of requests in a minute. Wait a moment, then try again.");
     const id = newActivityId();
     const emit = openStream(res);
     emit({ step: "started", id });
@@ -223,16 +226,13 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     return item;
   }
 
-  function takePlan(address, id) {
-    const entry = plans.get(id);
-    if (!entry || entry.address !== address) throw new HttpError(404, "This quote is no longer available. Ask Edith again for a fresh one.");
-    if (entry.expires < Date.now()) {
-      plans.delete(id);
-      throw new HttpError(410, "This quote expired before it was signed. Nothing was paid. Ask Edith again for a fresh one.");
-    }
-    if (entry.state !== "ready") throw new HttpError(409, "This payment is already being processed.");
-    entry.state = "paying"; // set before any await, so a double submit cannot settle twice
-    return entry;
+  // Claims the quote atomically, so a double submit (or a second tab, or a second instance) cannot pay it twice.
+  async function takePlan(address, id) {
+    const { planned, reason } = await plans.take(id, address);
+    if (reason === "missing") throw new HttpError(404, "This quote is no longer available. Ask Edith again for a fresh one.");
+    if (reason === "expired") throw new HttpError(410, "This quote expired before it was signed. Nothing was paid. Ask Edith again for a fresh one.");
+    if (reason === "busy") throw new HttpError(409, "This payment is already being processed.");
+    return { planned };
   }
 
   // Counts this payment against the limits and marks it settling, in one write.
@@ -241,7 +241,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
       const limits = bigLimits(user.limits);
       if (amount > limits.perCallMist) throw new HttpError(409, "This payment is over your limit per payment now. Nothing was paid.");
       if (spentToday(user) + amount > limits.dailyMist) throw new HttpError(409, "This payment would take you past your 24-hour limit. Nothing was paid.");
-      return withActivity(user, id, { state: "settling", digest });
+      return withActivity(user, id, { state: "settling", digest, settlingAt: new Date().toISOString() });
     });
   }
 
@@ -250,13 +250,13 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     if (typeof transaction !== "string" || !BASE64_RE.test(transaction) || typeof signature !== "string" || !BASE64_RE.test(signature)) {
       throw new HttpError(400, "Your wallet didn't return a signed payment.");
     }
-    const entry = takePlan(address, id);
+    const entry = await takePlan(address, id);
     let digest;
     try {
       digest = transactionDigest(fromBase64(transaction));
       await reserve(address, id, entry.planned.terms.amount, digest);
     } catch (err) {
-      entry.state = "ready";
+      await plans.release(id);
       throw err instanceof HttpError ? err : new HttpError(400, "Your wallet returned a payment Edith couldn't read. Nothing was paid.");
     }
 
@@ -278,7 +278,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
       const item = await setItem(address, id, failedItem(err, sent));
       emit({ step: "error", message: item.error, activity: item });
     } finally {
-      plans.delete(id);
+      await plans.drop(id).catch((err) => console.error("plan cleanup failed:", err));
     }
     res.end();
   }
@@ -316,12 +316,12 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     "GET /api/session": async (req) => ({ address: auth.session(readCookie(req, SESSION_COOKIE)) }),
 
     "POST /api/session/challenge": async (req) => {
-      if (!signInLimit(clientIp(req))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
+      if (!(await signInLimit(clientIp(req)))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
       return { message: auth.signInMessage((await readBody(req)).address) };
     },
 
     "POST /api/session": async (req, res) => {
-      if (!signInLimit(clientIp(req))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
+      if (!(await signInLimit(clientIp(req)))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
       const { message, signature } = await readBody(req);
       const { address, cookie } = await auth.signIn(message, signature);
       send(res, 200, { address }, { "set-cookie": cookieHeader(SESSION_COOKIE, cookie, { maxAgeMs: SESSION_TTL_MS, secure }) });
@@ -360,8 +360,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     "POST /api/requests/:id/cancel": async (req, res, url, id) => {
       const address = signedIn(req);
       await readBody(req);
-      const entry = plans.get(id);
-      if (entry?.address === address && entry.state === "ready") plans.delete(id);
+      if (!(await plans.cancel(id, address))) throw new HttpError(409, "This payment is already being processed.");
       const item = (await store.read(address)).activity.find((a) => a.id === id);
       if (!item) throw new HttpError(404, "Edith has no record of this request.");
       return { activity: item.state === "awaiting" ? await setItem(address, id, { state: "cancelled" }) : current(item) };
@@ -410,7 +409,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     "POST /v1/requests": async (req) => {
       const { address, agent } = await agentFor(req);
       const target = requestUrl((await readBody(req)).url);
-      if (!requestLimit(address)) throw new HttpError(429, "Too many requests in a minute. Wait a moment, then try again.");
+      if (!(await requestLimit(address))) throw new HttpError(429, "Too many requests in a minute. Wait a moment, then try again.");
       try {
         return agentView(await planRequest(address, target, { source: { kind: "agent", agentId: agent.id, name: agent.name } }));
       } catch (err) {
@@ -429,8 +428,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
       await readBody(req);
       const item = await ownedByAgent(address, agent, id);
       if (item.state !== "awaiting") return agentView(item);
-      if (plans.get(id)?.state === "paying") throw new HttpError(409, "The owner is already paying this request.");
-      plans.delete(id);
+      if (!(await plans.cancel(id, address))) throw new HttpError(409, "The owner is already paying this request.");
       return agentView(await setItem(address, id, { state: "cancelled", error: "Withdrawn by the agent." }));
     },
   };
@@ -444,7 +442,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
     return [routes[`${method} ${pathname}`], null];
   }
 
-  return createServer(async (req, res) => {
+  return async (req, res) => {
     securityHeaders(res, secure);
     const url = new URL(req.url, "http://edith");
     if (demo.handler && (url.pathname === "/demo" || url.pathname.startsWith("/demo/"))) return demo.handler(req, res);
@@ -462,40 +460,19 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
       console.error(`${req.method} ${url.pathname} failed:`, err);
       send(res, 502, { error: "Edith couldn't load this right now. Try again in a moment." });
     }
-  });
+  };
 }
 
+// A standalone HTTP server around the same handler (local runs and tests).
+export const createApi = (options) => createServer(createHandler(options));
+
 if (import.meta.main) {
-  const { tatumSuiClient, NETWORK } = await import("./sui.mjs");
-  const { createMemory } = await import("./memory.mjs");
-  const { createAuth } = await import("./auth.mjs");
-  const { createStore } = await import("./store.mjs");
-  const { createProviderFetch } = await import("./net.mjs");
-  const { createProvider } = await import("./server.mjs");
-
-  const env = process.env;
-  const port = Number(env.PORT ?? 4030);
-  const origin = (env.PUBLIC_ORIGIN ?? `http://localhost:${port}`).replace(/\/+$/, "");
-  const secure = origin.startsWith("https://");
-  // A public (https) deployment refuses to start half-configured.
-  const required = ["SESSION_SECRET", "SERVER_CHALLENGE_SECRET", "TATUM_API_KEY", "MEMWAL_PRIVATE_KEY", "MEMWAL_ACCOUNT_ID", "SERVER_SUI_ADDRESS", "SUI_NETWORK", "DATA_DIR"];
-  const missing = secure ? required.filter((name) => !env[name]) : [];
-  if (missing.length) throw new Error(`PUBLIC_ORIGIN is https, so these must be set: ${missing.join(", ")}`);
-  // Without SESSION_SECRET (local only), sessions end when the server restarts.
-  const secret = env.SESSION_SECRET || randomBytes(32).toString("hex");
-
-  const sui = tatumSuiClient();
-  const provider = await createProvider({ prefix: "/demo" });
-  const server = createApi({
-    sui, network: NETWORK, secure, origin,
-    memory: createMemory(),
-    store: createStore(env.DATA_DIR ? `${env.DATA_DIR}/users` : "data/users"),
-    auth: createAuth({ secret, origin, network: NETWORK, client: sui }),
-    providerFetch: createProviderFetch({ demo: { origin, prefix: "/demo", target: `http://127.0.0.1:${port}` }, allowPrivate: env.ALLOW_PRIVATE_PROVIDERS === "1" }),
-    demo: { ...provider, name: "Quote Desk", baseUrl: `${origin}/demo/quote`, priceMist: provider.price },
-    staticDir: env.STATIC_DIR ?? "web/dist",
-    trustProxy: env.TRUST_PROXY === "1",
-  }).listen(port, env.HOST ?? "127.0.0.1", () => console.log(`Edith on ${origin} (network ${NETWORK}, listening on ${env.HOST ?? "127.0.0.1"}:${port})`));
+  // Local or container run: one HTTP server around the same handler Vercel uses (src/app.mjs).
+  const { buildHandler } = await import("./app.mjs");
+  const port = Number(process.env.PORT ?? 4030);
+  const host = process.env.HOST ?? "127.0.0.1";
+  const server = createServer(await buildHandler(process.env, { port }));
+  server.listen(port, host, () => console.log(`Edith on ${process.env.PUBLIC_ORIGIN ?? `http://localhost:${port}`} (listening on ${host}:${port})`));
 
   // On redeploy: stop taking requests, let payments already settling finish, then exit.
   // ponytail: a settlement still running after 30 s is cut off; it then shows as uncertain and can be re-checked.

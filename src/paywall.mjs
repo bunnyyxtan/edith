@@ -50,19 +50,21 @@ export function createPaywall({ secret, network, payTo, price, ledger, settlePay
       throw new PaymentError("challenge was issued for a different request");
     }
 
-    if (!ledger.reserve(digest)) throw new PaymentError("payment already used");
+    if (!(await ledger.reserve(digest))) throw new PaymentError("payment already used");
+    let payment;
     try {
-      const payment = await settlePayment({ bytes, signature, digest }, { payTo, minAmount: BigInt(claims.amount) });
+      payment = await settlePayment({ bytes, signature, digest }, { payTo, minAmount: BigInt(claims.amount) });
       if (!payment.ok) throw new PaymentError("payment not found or below the required amount");
       if (payment.timestampMs === null) throw new PaymentError("payment not finalized yet");
       // A transfer that landed before this challenge was issued is an old payment being replayed.
       if (payment.timestampMs < claims.iat - CLOCK_SKEW_MS) throw new PaymentError("payment predates the challenge");
-      ledger.commit(digest);
-      return { payer: payment.sender, digest };
     } catch (err) {
-      ledger.release(digest);
+      await ledger.release(digest);
       throw err;
     }
+    // Paid: never released from here on. If recording fails, the reservation stays and blocks reuse.
+    await ledger.commit(digest);
+    return { payer: payment.sender, digest };
   }
 
   return { requirements, redeem };
