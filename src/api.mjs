@@ -122,6 +122,9 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
   const requestLimit = createLimiter({ limit: 30, windowMs: 60_000 });
 
   const edithFor = (address) => createEdith({ sui, memory, network, payer: address, namespace: userNamespace(address), fetch: providerFetch });
+  // Same-origin check against the public origin when it is configured; behind a proxy, Host may be internal.
+  const publicHost = origin ? new URL(origin).host : undefined;
+  const readBody = (req) => readJson(req, publicHost);
   const clientIp = (req) => (trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "") || req.socket.remoteAddress;
 
   function signedIn(req) {
@@ -164,7 +167,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
   };
 
   async function startRequest(req, res, address) {
-    const target = requestUrl((await readJson(req)).url);
+    const target = requestUrl((await readBody(req)).url);
     if (!requestLimit(address)) throw new HttpError(429, "That's a lot of requests in a minute. Wait a moment, then try again.");
     const id = newActivityId();
     const emit = openStream(res);
@@ -243,7 +246,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
   }
 
   async function pay(req, res, address, id) {
-    const { transaction, signature } = await readJson(req);
+    const { transaction, signature } = await readBody(req);
     if (typeof transaction !== "string" || !BASE64_RE.test(transaction) || typeof signature !== "string" || !BASE64_RE.test(signature)) {
       throw new HttpError(400, "Your wallet didn't return a signed payment.");
     }
@@ -314,18 +317,18 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /api/session/challenge": async (req) => {
       if (!signInLimit(clientIp(req))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
-      return { message: auth.signInMessage((await readJson(req)).address) };
+      return { message: auth.signInMessage((await readBody(req)).address) };
     },
 
     "POST /api/session": async (req, res) => {
       if (!signInLimit(clientIp(req))) throw new HttpError(429, "Too many sign-in attempts. Wait a minute, then try again.");
-      const { message, signature } = await readJson(req);
+      const { message, signature } = await readBody(req);
       const { address, cookie } = await auth.signIn(message, signature);
       send(res, 200, { address }, { "set-cookie": cookieHeader(SESSION_COOKIE, cookie, { maxAgeMs: SESSION_TTL_MS, secure }) });
     },
 
     "POST /api/session/end": async (req, res) => {
-      await readJson(req);
+      await readBody(req);
       send(res, 200, { address: null }, { "set-cookie": cookieHeader(SESSION_COOKIE, "", { maxAgeMs: 0, secure }) });
     },
 
@@ -343,7 +346,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "PUT /api/limits": async (req) => {
       const address = signedIn(req);
-      const limits = validLimits(await readJson(req));
+      const limits = validLimits(await readBody(req));
       const user = await store.update(address, (u) => ({ ...u, limits, limitsSetAt: new Date().toISOString() }));
       return { limits: user.limits, limitsSetAt: user.limitsSetAt, spentMist: spentToday(user) };
     },
@@ -356,7 +359,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /api/requests/:id/cancel": async (req, res, url, id) => {
       const address = signedIn(req);
-      await readJson(req);
+      await readBody(req);
       const entry = plans.get(id);
       if (entry?.address === address && entry.state === "ready") plans.delete(id);
       const item = (await store.read(address)).activity.find((a) => a.id === id);
@@ -366,13 +369,13 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /api/requests/:id/recheck": async (req, res, url, id) => {
       const address = signedIn(req);
-      await readJson(req);
+      await readBody(req);
       return recheck(address, id);
     },
 
     "POST /api/requests/:id/requote": async (req, res, url, id) => {
       const address = signedIn(req);
-      await readJson(req);
+      await readBody(req);
       return requote(address, id);
     },
 
@@ -383,7 +386,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /api/agents": async (req) => {
       const address = signedIn(req);
-      const name = validAgentName((await readJson(req)).name);
+      const name = validAgentName((await readBody(req)).name);
       if (!name) throw new HttpError(400, "Give the agent a name of up to 40 letters, numbers or spaces.");
       const { agent, token } = newAgent(address, name);
       await store.update(address, (u) => {
@@ -396,7 +399,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /api/agents/:id/revoke": async (req, res, url, id) => {
       const address = signedIn(req);
-      await readJson(req);
+      await readBody(req);
       const user = await store.update(address, (u) => {
         if (!(u.agents ?? []).some((a) => a.id === id)) throw new HttpError(404, "This wallet has no agent with that id.");
         return { ...u, agents: u.agents.map((a) => (a.id === id && !a.revokedAt ? { ...a, revokedAt: new Date().toISOString() } : a)) };
@@ -406,7 +409,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /v1/requests": async (req) => {
       const { address, agent } = await agentFor(req);
-      const target = requestUrl((await readJson(req)).url);
+      const target = requestUrl((await readBody(req)).url);
       if (!requestLimit(address)) throw new HttpError(429, "Too many requests in a minute. Wait a moment, then try again.");
       try {
         return agentView(await planRequest(address, target, { source: { kind: "agent", agentId: agent.id, name: agent.name } }));
@@ -423,7 +426,7 @@ export function createApi({ sui, memory, network, store, auth, providerFetch, de
 
     "POST /v1/requests/:id/cancel": async (req, res, url, id) => {
       const { address, agent } = await agentFor(req);
-      await readJson(req);
+      await readBody(req);
       const item = await ownedByAgent(address, agent, id);
       if (item.state !== "awaiting") return agentView(item);
       if (plans.get(id)?.state === "paying") throw new HttpError(409, "The owner is already paying this request.");
@@ -474,13 +477,16 @@ if (import.meta.main) {
   const port = Number(env.PORT ?? 4030);
   const origin = (env.PUBLIC_ORIGIN ?? `http://localhost:${port}`).replace(/\/+$/, "");
   const secure = origin.startsWith("https://");
-  if (secure && !env.SESSION_SECRET) throw new Error("SESSION_SECRET is required when PUBLIC_ORIGIN is https");
+  // A public (https) deployment refuses to start half-configured.
+  const required = ["SESSION_SECRET", "SERVER_CHALLENGE_SECRET", "TATUM_API_KEY", "MEMWAL_PRIVATE_KEY", "MEMWAL_ACCOUNT_ID", "SERVER_SUI_ADDRESS", "SUI_NETWORK", "DATA_DIR"];
+  const missing = secure ? required.filter((name) => !env[name]) : [];
+  if (missing.length) throw new Error(`PUBLIC_ORIGIN is https, so these must be set: ${missing.join(", ")}`);
   // Without SESSION_SECRET (local only), sessions end when the server restarts.
   const secret = env.SESSION_SECRET || randomBytes(32).toString("hex");
 
   const sui = tatumSuiClient();
   const provider = await createProvider({ prefix: "/demo" });
-  createApi({
+  const server = createApi({
     sui, network: NETWORK, secure, origin,
     memory: createMemory(),
     store: createStore(env.DATA_DIR ? `${env.DATA_DIR}/users` : "data/users"),
@@ -490,4 +496,11 @@ if (import.meta.main) {
     staticDir: env.STATIC_DIR ?? "web/dist",
     trustProxy: env.TRUST_PROXY === "1",
   }).listen(port, env.HOST ?? "127.0.0.1", () => console.log(`Edith on ${origin} (network ${NETWORK}, listening on ${env.HOST ?? "127.0.0.1"}:${port})`));
+
+  // On redeploy: stop taking requests, let payments already settling finish, then exit.
+  // ponytail: a settlement still running after 30 s is cut off; it then shows as uncertain and can be re-checked.
+  process.on("SIGTERM", () => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 30_000).unref();
+  });
 }

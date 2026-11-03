@@ -40,10 +40,11 @@ export function openStream(res) {
 
 // Only same-origin JSON requests may trigger work: a cross-site form cannot send this content type,
 // and the session cookie is SameSite=Strict besides.
-export async function readJson(req) {
+// expectedHost: the public host (from PUBLIC_ORIGIN) when Edith runs behind a proxy that rewrites Host.
+export async function readJson(req, expectedHost = req.headers.host) {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new HttpError(415, "Expected a JSON request.");
   const origin = req.headers.origin;
-  if (origin && new URL(origin).host !== req.headers.host) throw new HttpError(403, "Requests must come from the Edith app.");
+  if (origin && new URL(origin).host !== expectedHost) throw new HttpError(403, "Requests must come from the Edith app.");
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {

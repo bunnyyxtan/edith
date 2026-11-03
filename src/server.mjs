@@ -66,7 +66,8 @@ export async function createProvider({ env = process.env, prefix = "" } = {}) {
     network: NETWORK,
     payTo,
     price: PRICE_MIST,
-    ledger: createLedger(env.LEDGER_PATH ?? "data/used-digests.txt"),
+    // Kept with the rest of the persistent data, so replay protection survives a redeploy.
+    ledger: createLedger(env.LEDGER_PATH ?? `${env.DATA_DIR ?? "data"}/used-digests.txt`),
     settlePayment: (signed, terms) => settlePayment(client, signed, terms),
   });
   return { handler: createProviderHandler(paywall, prefix), payTo, price: PRICE_MIST };
