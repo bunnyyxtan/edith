@@ -1,8 +1,9 @@
-// Sui access through Tatum's gRPC gateway, plus payment lookup.
+// Sui access through Tatum's gRPC gateway: settling signed payments, checking them before they are
+// sent, and verifying them afterwards.
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { GrpcTransport } from "@protobuf-ts/grpc-transport";
 import { ChannelCredentials } from "@grpc/grpc-js";
-import { SUI_COIN } from "./payment.mjs";
+import { PaymentError, SUI_COIN } from "./payment.mjs";
 
 export const NETWORK = process.env.SUI_NETWORK ?? "devnet";
 
@@ -21,12 +22,15 @@ const coinSuffix = (type) => type.slice(type.indexOf("::"));
 // Rate limits, gateway hiccups and indexing lag right after execution are worth a short retry.
 const RETRYABLE_CODES = new Set(["UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED", "NOT_FOUND"]);
 
-export async function withRetry(fn, { attempts = 4, baseDelayMs = 500 } = {}) {
+// Submitting is different: NOT_FOUND there means a missing gas coin, which no retry fixes.
+const OUTAGE_CODES = new Set(["UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED"]);
+
+export async function withRetry(fn, { attempts = 4, baseDelayMs = 500, codes = RETRYABLE_CODES } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt >= attempts || !RETRYABLE_CODES.has(err.code)) throw err;
+      if (attempt >= attempts || !codes.has(err.code)) throw err;
       await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** (attempt - 1)));
     }
   }
@@ -52,6 +56,42 @@ export async function verifyPayment(client, digest, { payTo, minAmount }) {
     sender: tx.transaction.sender,
     timestampMs: tx.timestampMs,
   };
+}
+
+// Provider side: submit the payer's signed transfer, wait for it to land, then read what payTo received.
+// Submitting a transaction that already landed returns its effects, so retrying after an outage is safe.
+// Sui refusing the transaction (bad signature, no gas) is the payer's problem: a PaymentError, not an outage.
+export async function settlePayment(client, { bytes, signature, digest }, terms) {
+  try {
+    await withRetry(() => client.core.executeTransaction({ transaction: bytes, signatures: [signature] }), { codes: OUTAGE_CODES });
+  } catch (err) {
+    if (OUTAGE_CODES.has(err.code)) throw err;
+    throw new PaymentError(`Sui rejected the payment transaction: ${err.message}`);
+  }
+  await withRetry(() => client.core.waitForTransaction({ digest, timeout: 30_000 }));
+  return verifyPayment(client, digest, terms);
+}
+
+// Payer side, before a signed transfer leaves Edith: simulate it and confirm it pays exactly the quote,
+// from this sender, to this payee and nobody else. Returns a reason string when it does not.
+export async function checkTransfer(client, bytes, { sender, payTo, amount }) {
+  let res;
+  try {
+    res = await withRetry(() => client.core.simulateTransaction({ transaction: bytes, include: { balanceChanges: true, transaction: true } }), { codes: OUTAGE_CODES });
+  } catch (err) {
+    // Sui refusing the inputs (a gas coin already spent, an empty wallet) is an answer, not an outage.
+    if (OUTAGE_CODES.has(err.code)) throw err;
+    const why = /could not find the referenced object/i.test(err.message) ? "the coin it pays with is gone or already spent" : err.message.replace(/^Error checking transaction input objects: /, "");
+    return `Sui would refuse it: ${why}. Check your wallet's balance and try again`;
+  }
+  const tx = res.Transaction ?? res.FailedTransaction;
+  if (!tx.status.success) return `the transfer would fail on Sui (${tx.status.error?.message ?? "execution error"})`;
+  if (tx.transaction.sender !== sender) return "the transfer was signed by a different account than the one signed in";
+  const credits = tx.balanceChanges.filter((c) => BigInt(c.amount) > 0n && c.address !== sender);
+  const paid = credits.filter((c) => c.address === payTo && coinSuffix(c.coinType) === coinSuffix(SUI_COIN)).reduce((sum, c) => sum + BigInt(c.amount), 0n);
+  if (credits.some((c) => c.address !== payTo || coinSuffix(c.coinType) !== coinSuffix(SUI_COIN))) return "the transfer pays someone other than the quoted provider";
+  if (paid !== BigInt(amount)) return `the transfer pays ${paid} MIST, not the quoted ${amount} MIST`;
+  return null;
 }
 
 export function explorerUrl(digest, network = NETWORK) {

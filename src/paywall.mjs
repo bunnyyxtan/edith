@@ -1,9 +1,10 @@
-// Server side of the payment protocol: issues 402 terms and redeems payment proofs exactly once.
+// Server side of the payment protocol: issues 402 terms, settles the payer's signed transfer and
+// answers each payment exactly once.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PaymentError, SUI_COIN, isDigest, issueChallenge, proofSigner, readChallenge } from "./payment.mjs";
+import { PaymentError, SUI_COIN, issueChallenge, readChallenge, readPaymentHeader } from "./payment.mjs";
 
-const MAX_HEADER_BYTES = 4096;
+const MAX_HEADER_BYTES = 12_288; // zkLogin and passkey signatures run to a few KB
 const CLOCK_SKEW_MS = 60_000;
 
 // Digests are reserved synchronously before any await, so concurrent redeems of one digest cannot both pass.
@@ -29,8 +30,9 @@ export function createLedger(path) {
   };
 }
 
-// lookupPayment(digest, { payTo, minAmount }) -> { ok, sender, timestampMs }
-export function createPaywall({ secret, network, payTo, price, ledger, lookupPayment, now = Date.now }) {
+// settlePayment({ bytes, signature, digest }, { payTo, minAmount }) -> { ok, sender, timestampMs }
+// Submits the signed transfer (a no-op if it already landed) and reports what reached payTo.
+export function createPaywall({ secret, network, payTo, price, ledger, settlePayment, now = Date.now }) {
   function requirements(resource) {
     const challenge = issueChallenge(secret, { resource, amount: String(price), payTo, network }, now());
     return {
@@ -41,30 +43,22 @@ export function createPaywall({ secret, network, payTo, price, ledger, lookupPay
 
   async function redeem(resource, header) {
     if (!header || header.length > MAX_HEADER_BYTES) throw new PaymentError("missing or oversized X-PAYMENT header");
-    let proof;
-    try {
-      proof = JSON.parse(header);
-    } catch {
-      throw new PaymentError("X-PAYMENT must be JSON {challenge, digest, signature}");
-    }
-    const { challenge, digest, signature } = proof;
-    if (!isDigest(digest)) throw new PaymentError("invalid transaction digest");
+    const { challenge, bytes, signature, digest } = readPaymentHeader(header);
 
     const claims = readChallenge(secret, challenge, now());
     if (claims.resource !== resource || claims.network !== network || claims.payTo !== payTo) {
       throw new PaymentError("challenge was issued for a different request");
     }
-    const signer = await proofSigner(challenge, digest, signature);
 
     if (!ledger.reserve(digest)) throw new PaymentError("payment already used");
     try {
-      const payment = await lookupPayment(digest, { payTo, minAmount: BigInt(claims.amount) });
+      const payment = await settlePayment({ bytes, signature, digest }, { payTo, minAmount: BigInt(claims.amount) });
       if (!payment.ok) throw new PaymentError("payment not found or below the required amount");
-      if (payment.sender !== signer) throw new PaymentError("payment proof not signed by the payer");
       if (payment.timestampMs === null) throw new PaymentError("payment not finalized yet");
+      // A transfer that landed before this challenge was issued is an old payment being replayed.
       if (payment.timestampMs < claims.iat - CLOCK_SKEW_MS) throw new PaymentError("payment predates the challenge");
       ledger.commit(digest);
-      return { payer: signer };
+      return { payer: payment.sender, digest };
     } catch (err) {
       ledger.release(digest);
       throw err;

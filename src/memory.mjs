@@ -2,8 +2,11 @@
 // Records are single-line key=value text: semantic recall finds candidates, exact fields decide.
 import { MemWal } from "@mysten-incubation/memwal";
 
-export const NAMESPACE = "edith";
+export const NAMESPACE = "edith"; // the command-line agent's own memory
 const RECALL_LIMIT = 100; // ceiling on history per endpoint; summarize older outcomes if endpoints outgrow it
+
+// Each signed-in wallet learns in its own namespace, so one person's history never steers another's payments.
+export const userNamespace = (address) => `edith-${address}`;
 
 export function createMemory(env = process.env) {
   if (!env.MEMWAL_PRIVATE_KEY || !env.MEMWAL_ACCOUNT_ID) throw new Error("MEMWAL_PRIVATE_KEY and MEMWAL_ACCOUNT_ID are required");
@@ -51,14 +54,19 @@ export function toOutcome(record) {
 }
 
 // All remembered outcomes for one endpoint at one provider on one network.
-export async function loadHistory(memory, { endpoint, provider, network }) {
-  const { results } = await memory.recall(`event=outcome endpoint=${endpoint} provider=${provider} network=${network}`, RECALL_LIMIT);
-  return results
-    .map((m) => toOutcome(parseRecord(m.text)))
-    .filter((r) => r && r.endpoint === endpoint && r.network === network && (!r.provider || r.provider === provider));
+export async function loadHistory(memory, { endpoint, provider, network }, namespace = NAMESPACE) {
+  return (await loadRecords(memory, { endpoint, provider, network }, namespace)).map(toOutcome).filter(Boolean);
 }
 
-export async function rememberEvent(memory, fields, { wait = true } = {}) {
+// Every record for one endpoint, including declined payments. Older records carry no endpoint, so it is derived from the key.
+export async function loadRecords(memory, { endpoint, provider, network }, namespace = NAMESPACE) {
+  const { results } = await memory.recall({ query: `endpoint=${endpoint} provider=${provider} network=${network}`, limit: RECALL_LIMIT, namespace });
+  return results
+    .map((m) => ({ ...parseRecord(m.text), blobId: m.blob_id }))
+    .filter((r) => (r.endpoint ?? r.key?.split("?")[0]) === endpoint && r.network === network && (!r.provider || r.provider === provider));
+}
+
+export async function rememberEvent(memory, fields, { wait = true, namespace = NAMESPACE } = {}) {
   const text = formatRecord({ ...fields, at: new Date().toISOString() });
-  return wait ? memory.rememberAndWait(text) : memory.remember(text);
+  return wait ? memory.rememberAndWait(text, namespace) : memory.remember(text, namespace);
 }

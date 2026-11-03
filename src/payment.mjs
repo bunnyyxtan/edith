@@ -1,17 +1,20 @@
-// Payment protocol shared by the agent and the paywall.
+// Payment protocol shared by the payer and the paywall (the x402 "exact" shape on Sui).
 //
 // 1. The paywall answers 402 with terms and an HMAC-signed challenge that binds resource, amount,
 //    payee and network, and expires.
-// 2. The agent pays on Sui, then signs "challenge + digest" with the key that sent the payment.
-// 3. The paywall checks the challenge, the signature, and that the signer is the transaction sender.
-//    A digest observed on chain is useless to anyone who does not hold the payer's key.
+// 2. The payer signs a SUI transfer for those terms but does not submit it. Its wallet holds the key.
+// 3. The paywall checks the challenge, submits the signed transfer itself, confirms the credit, and
+//    answers in the same exchange. The transaction is off chain until the provider settles it, so
+//    nobody else can see it, let alone redeem it.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
+import { TransactionDataBuilder } from "@mysten/sui/transactions";
+import { fromBase64 } from "@mysten/sui/utils";
 
 export const SUI_COIN = "0x2::sui::SUI";
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 const DIGEST_RE = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 const ADDRESS_RE = /^0x[0-9a-f]{64}$/;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
 export class PaymentError extends Error {}
 
@@ -39,21 +42,34 @@ export function isDigest(value) {
   return typeof value === "string" && DIGEST_RE.test(value);
 }
 
-const proofMessage = (challenge, digest) => new TextEncoder().encode(`edith-payment-proof:${challenge}:${digest}`);
-
-export async function signProof(signer, challenge, digest) {
-  const { signature } = await signer.signPersonalMessage(proofMessage(challenge, digest));
-  return signature;
+// The digest a signed transaction will have on chain, known before anyone submits it.
+export function transactionDigest(bytes) {
+  return TransactionDataBuilder.getDigestFromBytes(bytes);
 }
 
-// Returns the Sui address that signed the proof; throws if the signature is invalid.
-export async function proofSigner(challenge, digest, signature) {
+// X-PAYMENT header: the challenge it answers and the payer's signed, unsubmitted transfer (base64 BCS).
+export const paymentHeader = ({ challenge, transaction, signature }) => JSON.stringify({ challenge, transaction, signature });
+
+export function readPaymentHeader(header) {
+  let proof;
   try {
-    const publicKey = await verifyPersonalMessageSignature(proofMessage(challenge, digest), signature);
-    return publicKey.toSuiAddress();
+    proof = JSON.parse(header);
   } catch {
-    throw new PaymentError("payment proof signature invalid");
+    throw new PaymentError("X-PAYMENT must be JSON {challenge, transaction, signature}");
   }
+  const { challenge, transaction, signature } = proof ?? {};
+  if (typeof challenge !== "string") throw new PaymentError("missing payment challenge");
+  if (typeof transaction !== "string" || !BASE64_RE.test(transaction)) throw new PaymentError("invalid signed transaction");
+  if (typeof signature !== "string" || !BASE64_RE.test(signature)) throw new PaymentError("invalid transaction signature");
+  const bytes = fromBase64(transaction);
+  let digest;
+  try {
+    TransactionDataBuilder.fromBytes(bytes); // parses, so garbage never reaches the chain or the ledger
+    digest = transactionDigest(bytes);
+  } catch {
+    throw new PaymentError("invalid signed transaction");
+  }
+  return { challenge, bytes, signature, digest };
 }
 
 // Agent-side validation of a 402 body before any money moves.

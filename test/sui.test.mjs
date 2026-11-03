@@ -43,3 +43,13 @@ test("verifyPayment rejects failed transactions", async () => {
   const client = clientReturning(async () => tx([{ address: PAY_TO, coinType: "0x2::sui::SUI", amount: "1000" }], false));
   assert.equal((await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1n })).ok, false);
 });
+
+test("checkTransfer reports a transfer Sui refuses, and lets outages through", async () => {
+  const { checkTransfer } = await import("../src/sui.mjs");
+  const refusing = { core: { simulateTransaction: async () => { throw Object.assign(new Error("Error checking transaction input objects: Could not find the referenced object 0x11"), { code: "INVALID_ARGUMENT" }); } } };
+  assert.match(await checkTransfer(refusing, new Uint8Array(), { sender: "0xa", payTo: "0xb", amount: 1n }), /Sui would refuse it: the coin it pays with is gone or already spent/);
+  let calls = 0;
+  const down = { core: { simulateTransaction: async () => { calls++; throw Object.assign(new Error("unavailable"), { code: "UNAVAILABLE" }); } } };
+  await assert.rejects(checkTransfer(down, new Uint8Array(), { sender: "0xa", payTo: "0xb", amount: 1n }), /unavailable/);
+  assert.equal(calls, 4, "outages are retried before giving up");
+});

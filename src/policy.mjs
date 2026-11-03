@@ -47,10 +47,13 @@ export function decide(history, { key, price, now }) {
   }
 
   const ok = latest.filter((r) => r.result === "success").length;
-  const note = lastExact?.result === "failure" ? "transient failure cooled down, retrying" : `endpoint record: ${ok} requests ok, ${latest.length - ok} failed`;
+  const note = lastExact?.result === "failure" ? "a temporary failure has cooled down, so it is worth one retry"
+    : latest.length === 0 ? "nothing remembered against this endpoint yet"
+    : `this endpoint delivered on ${ok} of ${latest.length} requests Edith remembers`;
   return { action: "pay", reason: note };
 }
 
+// `basis` is the remembered outcome behind the decision, so the decline can show its evidence.
 function skip(reason, record) {
-  return { action: "skip", reason, saved: record?.paid };
+  return { action: "skip", reason, saved: record?.paid, basis: record ?? null };
 }

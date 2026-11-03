@@ -11,14 +11,22 @@
   "scripts": {
     "setup:wallets": "node scripts/setup-wallets.mjs",
     "check": "node --env-file=.env scripts/check-integrations.mjs",
+    "start": "node --env-file=.env src/api.mjs",
     "server": "node --env-file=.env src/server.mjs",
     "agent": "node --env-file=.env src/agent.mjs",
-    "test": "node --test"
+    "qa": "node scripts/qa-server.mjs",
+    "test": "node --test",
+    "dev:web": "vite --config web/vite.config.mjs",
+    "build": "vite build --config web/vite.config.mjs"
   },
   "dependencies": {
     "@grpc/grpc-js": "1.14.7",
     "@mysten-incubation/memwal": "0.1.12",
     "@mysten/sui": "2.38.0",
+    "@mysten/wallet-standard": "0.21.34",
     "@protobuf-ts/grpc-transport": "2.11.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
   }
 }

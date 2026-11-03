@@ -1,11 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
-import { CHALLENGE_TTL_MS, PaymentError, SUI_COIN, issueChallenge, parseTerms, proofSigner, readChallenge, signProof } from "../src/payment.mjs";
+import { CHALLENGE_TTL_MS, PaymentError, SUI_COIN, issueChallenge, parseTerms, paymentHeader, readChallenge, readPaymentHeader } from "../src/payment.mjs";
+import { signedTransfer } from "./chain.mjs";
 
 const SECRET = "test-secret";
 const TERMS = { resource: "/quote?ticker=SUI", amount: "1000000", payTo: `0x${"a".repeat(64)}`, network: "mainnet" };
-const DIGEST = "H9oQdHwAc1NLF8nY5pa1FgVz6RgfSm56ZN1YXCHnJfzd";
 
 test("challenge round-trips and carries its terms", () => {
   const claims = readChallenge(SECRET, issueChallenge(SECRET, TERMS, 1000), 1000);
@@ -23,19 +22,21 @@ test("challenge rejects tampering, a wrong secret and expiry", () => {
   assert.throws(() => readChallenge(SECRET, challenge, 1000 + CHALLENGE_TTL_MS + 1), /expired/);
 });
 
-test("payment proof identifies the signing address", async () => {
-  const payer = new Ed25519Keypair();
-  const challenge = issueChallenge(SECRET, TERMS);
-  const signature = await signProof(payer, challenge, DIGEST);
-  assert.equal(await proofSigner(challenge, DIGEST, signature), payer.toSuiAddress());
+test("payment header carries the signed transfer and its on-chain digest", async () => {
+  const signed = await signedTransfer({ payTo: TERMS.payTo, amount: 1_000_000n });
+  const read = readPaymentHeader(paymentHeader({ challenge: "c.m", transaction: signed.transaction, signature: signed.signature }));
+  assert.equal(read.challenge, "c.m");
+  assert.equal(read.digest, signed.digest);
+  assert.equal(read.signature, signed.signature);
+  assert.deepEqual([...read.bytes], [...signed.bytes]);
 });
 
-test("a proof signed for one digest does not validate for another", async () => {
-  const payer = new Ed25519Keypair();
-  const challenge = issueChallenge(SECRET, TERMS);
-  const signature = await signProof(payer, challenge, DIGEST);
-  const other = "GXTajvsC1XrEWDJ8ZRDUeGfxQihmEAqUvpgbYRDY3An5";
-  await assert.rejects(proofSigner(challenge, other, signature), PaymentError);
+test("payment header rejects anything that is not a signed transfer", () => {
+  assert.throws(() => readPaymentHeader("not json"), /must be JSON/);
+  assert.throws(() => readPaymentHeader(JSON.stringify({ transaction: "AAAA", signature: "AAAA" })), /missing payment challenge/);
+  assert.throws(() => readPaymentHeader(JSON.stringify({ challenge: "c", transaction: "not base64!", signature: "AAAA" })), /invalid signed transaction/);
+  assert.throws(() => readPaymentHeader(JSON.stringify({ challenge: "c", transaction: "AAAA", signature: 5 })), /invalid transaction signature/);
+  assert.throws(() => readPaymentHeader(JSON.stringify({ challenge: "c", transaction: "AAAA", signature: "AAAA" })), PaymentError);
 });
 
 const body = (overrides = {}) => ({
