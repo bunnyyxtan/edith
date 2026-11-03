@@ -13,7 +13,7 @@
     "check": "node --env-file=.env scripts/check-integrations.mjs",
     "start": "node --env-file=.env src/api.mjs",
     "server": "node --env-file=.env src/server.mjs",
-    "agent": "node --env-file=.env src/agent.mjs",
+    "agent": "node src/agent.mjs",
     "qa": "node scripts/qa-server.mjs",
     "test": "node --test",
     "dev:web": "vite --config web/vite.config.mjs",

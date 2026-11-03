@@ -119,7 +119,7 @@ npm start               # site, app, API and demo provider on PORT (4030)
 
 Deploying: serve behind https, set `PUBLIC_ORIGIN` to the public address, `SESSION_SECRET` and `SERVER_CHALLENGE_SECRET` to long random values, `HOST=0.0.0.0` and `TRUST_PROXY=1` behind a reverse proxy, and keep `DATA_DIR` on persistent storage. `ALLOW_PRIVATE_PROVIDERS` stays off.
 
-The command-line agent (`npm run agent -- <url>`) is a developer tool that pays from its own `AGENT_SUI_PRIVATE_KEY`. The web app never uses it.
+`npm run agent -- <url>` is a minimal agent: with `EDITH_AGENT_KEY` from the Agents page it asks Edith about a paid URL and waits for your approval. It holds no wallet. The full Slush acceptance run is in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Tests and QA
 

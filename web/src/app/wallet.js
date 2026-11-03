@@ -38,6 +38,7 @@ export function createWallets(network) {
   let wallet = null;
   let account = null;
   const listeners = new Set();
+  const listening = new WeakSet();
   const notify = () => listeners.forEach((fn) => fn());
 
   // Extensions can register after the page has loaded. If the wallet used last time shows up late,
@@ -56,10 +57,14 @@ export function createWallets(network) {
     account = accounts[0] ?? null;
     if (!account) throw new WalletError(`${next.name} didn't share an account. Unlock it and try again.`);
     remember(next.name);
-    next.features["standard:events"]?.on("change", ({ accounts: changed }) => {
-      if (changed) account = changed[0] ?? null;
-      notify();
-    });
+    if (!listening.has(next)) {
+      listening.add(next); // one listener per wallet, however often it reconnects
+      next.features["standard:events"]?.on("change", ({ accounts: changed }) => {
+        if (wallet !== next) return;
+        if (changed) account = changed[0] ?? null;
+        notify();
+      });
+    }
     notify();
     return account.address;
   }
