@@ -117,7 +117,18 @@ npm run build           # builds the site and app into web/dist
 npm start               # site, app, API and demo provider on PORT (4030)
 ```
 
-Deploying: serve behind https, set `PUBLIC_ORIGIN` to the public address, `SESSION_SECRET` and `SERVER_CHALLENGE_SECRET` to long random values, `HOST=0.0.0.0` and `TRUST_PROXY=1` behind a reverse proxy, and keep `DATA_DIR` on persistent storage. `ALLOW_PRIVATE_PROVIDERS` stays off.
+### Deploying
+
+The `Dockerfile` builds the site and app and runs everything in one process on port 4030, as an unprivileged user. Behind an https proxy:
+
+```bash
+docker build -t edith .
+docker run -p 4030:4030 -v edith-data:/data --env-file .env.production edith
+```
+
+`.env.production` sets `PUBLIC_ORIGIN=https://…`, `SESSION_SECRET` and `SERVER_CHALLENGE_SECRET` (long random values), `TATUM_API_KEY`, `MEMWAL_PRIVATE_KEY`, `MEMWAL_ACCOUNT_ID`, `SUI_NETWORK`, `SERVER_SUI_ADDRESS` and `DATA_DIR=/data`; with an https origin Edith refuses to start while any of them is missing. `ALLOW_PRIVATE_PROVIDERS` stays off.
+
+Everything that must survive a redeploy lives in `DATA_DIR`: each wallet's limits, agents and activity (`users/`), and the provider's replay ledger (`used-digests.txt`). Memories live in Walrus. Run one instance: live quotes and rate limits are held in memory. On `SIGTERM` Edith stops taking requests and gives settling payments 30 seconds to finish. Open the app at exactly `PUBLIC_ORIGIN`: requests from any other origin are refused.
 
 `npm run agent -- <url>` is a minimal agent: with `EDITH_AGENT_KEY` from the Agents page it asks Edith about a paid URL and waits for your approval. It holds no wallet. The full Slush acceptance run is in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
@@ -138,6 +149,17 @@ EDITH_SMOKE_KEY=suiprivkey... node --env-file=.env scripts/mainnet-check.mjs --p
 ```
 
 The QA harness never touches a real chain. Load `/qa/wallet.js` into the app page to register its test wallet; `window.qaDecline(true)` makes it refuse like a person pressing Reject.
+
+## Mainnet acceptance run (Slush wallet and agents)
+
+Verified on Sui Mainnet with a real Slush wallet and agents using the agent API. Full record, with the verifier's output: [docs/EVIDENCE.md](docs/EVIDENCE.md).
+
+| Agent's request | Edith | Sui transaction | Walrus Memory |
+|---|---|---|---|
+| `ticker=SUI` | Approved in Slush, paid 0.001 SUI, useful | [75FUrCA5…](https://suiscan.xyz/mainnet/tx/75FUrCA5xTnXL5CU7i576Y5D4CttEGtyoFbR8JpiPsEX) | [honDNbf9…](https://walruscan.com/mainnet/blob/honDNbf9C_G5TsT8_FK6wpUMOXVuhSEqWU1hx5X1vRs) |
+| `ticker=SUI` | Approved in Slush, paid 0.001 SUI, useful | [x9Er8C5L…](https://suiscan.xyz/mainnet/tx/x9Er8C5Lv7xZF1e5zhesMisWFvC9Qc7ognf1qxAJ7ur) | [vC9lF2bS…](https://walruscan.com/mainnet/blob/vC9lF2bSgZ57U01FnAXODqpD30f0_9AdB1a-F0XFxyc) |
+| `ticker=ZZZ` | Approved in Slush, paid 0.001 SUI, got `{}`: remembered as a failure | [CHn7z3Jm…](https://suiscan.xyz/mainnet/tx/CHn7z3JmjQF9GbFfrxuuHet7ADayz55Fcy9AHXoxp9b4) | [pD3BkCla…](https://walruscan.com/mainnet/blob/pD3BkClaMcJop9tPYlsGI3WYATA6-HAmVR4LQfSKISk) |
+| `ticker=ZZZ`, fresh agent run | **Refused from memory**, citing `CHn7z3Jm…`. No wallet prompt, nothing paid | none | |
 
 ## Mainnet run (command-line agent)
 
