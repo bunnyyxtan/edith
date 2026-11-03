@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Started | Edith Documentation</title>
+  <meta name="description" content="Connect a Sui wallet, create an Edith agent key, set spending limits, and review your first paid API request.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/docs/getting-started"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="content-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Documentation / First use</p><h1>Getting Started</h1><p>From a new wallet connection to a verified paid response. Nothing is paid during setup; you approve each payment separately in your wallet.</p></header>
+    <div class="content-grid">
+      <aside class="content-side"><div><h2>Guides</h2><nav aria-label="Documentation"><a href="/docs">Overview</a><a href="/docs/getting-started" aria-current="page">Getting Started</a><a href="/docs/agents">Agent Integration</a><a href="/docs/payments">Payments &amp; Memory</a></nav></div><div><h2>On this page</h2><nav aria-label="On this page"><a href="#requirements">Requirements</a><a href="#connect-wallet">Connect and sign in</a><a href="#create-agent">Create an agent</a><a href="#set-limits">Set limits</a><a href="#first-request">First request</a><a href="#review-payment">Review a payment</a><a href="#read-result">Read the result</a></nav></div></aside>
+      <article class="content-body">
+        <h2 id="requirements">1. Check the requirements</h2>
+        <p>Use a browser with a Sui Wallet Standard wallet, such as Slush. Unlock a Mainnet account and ensure it has enough SUI for the quoted payment and network fees. You also need an agent or script that can send HTTP requests with an Edith agent key.</p>
+        <p class="note"><strong>Live payments.</strong> The deployed app uses Sui Mainnet. If your wallet displays a security warning, stop and assess it. These steps do not require bypassing wallet warnings.</p>
+        <h2 id="connect-wallet">2. Connect a wallet and sign in</h2>
+        <p>Open <a href="/app">Open Edith</a>, select <strong>Connect wallet</strong>, and choose a detected wallet. Approve the connection in the wallet. Edith then asks you to <strong>Sign to prove it's you</strong>.</p>
+        <p>The sign-in message includes the site, wallet address, network, nonce, and expiry. It proves control of that address and creates a session. It does not transfer SUI or authorize future payments. Edith asks for a separate transaction signature for each payment you approve.</p>
+        <h2 id="create-agent">3. Connect an agent</h2>
+        <p>Open <strong>Agents</strong>. Under <strong>Connect your first agent</strong>, enter an <strong>Agent name</strong> you will recognize in Activity, then select <strong>Create agent key</strong>. Copy the key while it is shown. Edith stores a fingerprint and cannot show the secret again. If you lose it, disconnect that agent and create another.</p>
+        <p>Give the key only to the agent you trust. It can ask Edith about paid URLs and read its own requests. It cannot approve or send a wallet payment. See <a href="/docs/agents">Agent Integration</a> for the API.</p>
+        <h2 id="set-limits">4. Set spending limits</h2>
+        <p>Open <strong>Limits</strong>. Review <strong>Most per payment</strong> and <strong>Most in 24 hours</strong>, then select <strong>Confirm these limits</strong> or choose your own values. The 24-hour limit is rolling. Payments still settling count toward it. Edith also applies a 0.01 SUI hard ceiling per call.</p>
+        <p>If this wallet has unreconciled historical payments, Edith holds new payments until those records are checked. Changing a limit does not remove that hold.</p>
+        <h2 id="first-request">5. Ask for a paid API response</h2>
+        <p>Your agent sends <code>POST /v1/requests</code> with a JSON <code>url</code> and its key in <code>Authorization: Bearer &lt;key&gt;</code>. Edith checks the URL, memory, limits, and the provider's quote. Submitting the request does not pay.</p>
+        <div class="code-head"><span>Example request · replace the key</span><button class="copy-code" type="button" data-copy="first-request-code">Copy</button></div>
+        <pre><code id="first-request-code">curl -X POST 'https://edith-sooty.vercel.app/v1/requests' \
+  -H 'Authorization: Bearer YOUR_AGENT_KEY' \
+  -H 'Content-Type: application/json' \
+  --data '{"url":"https://edith-sooty.vercel.app/demo/quote?ticker=SUI"}'</code></pre>
+        <p>The bundled Quote Desk URL above is a paid Mainnet demo provider. Its quote is 0.001 SUI. For a no-payment look at the flow, visit the <a href="/app/demo">guided demo</a> and read the steps without running them.</p>
+        <h2 id="review-payment">6. Review and approve</h2>
+        <p>If the response state is <code>awaiting</code>, open its <code>approval.review</code> URL or find it in <strong>Overview</strong> and <strong>Activity</strong>. Review the provider, amount, payee, and Edith's decision. Approve only if they match what you intended. Your wallet then asks you to sign the exact transfer. You may decline it.</p>
+        <p>If the quote has expired, Edith fetches a fresh price and checks memory and limits again when you review. A request can wait for approval for up to 24 hours.</p>
+        <h2 id="read-result">7. Read the result and evidence</h2>
+        <p>Poll <code>GET /v1/requests/:id</code> with the same agent key. A paid result includes the response body, Sui transaction digest, and, when saved, a Walrus Memory blob ID. <strong>Activity</strong> shows the decision and evidence to the wallet owner. A <code>blocked</code> result has a reason and no payment; <code>free</code> means the provider did not require payment.</p>
+        <p>For uncertain settlement, leave the payment reserved and use the app's recheck action. Do not pay the same request again until Sui evidence resolves it. Learn how this works in <a href="/docs/payments">Payments &amp; Memory</a>.</p>
+        <a class="next-link" href="/docs/agents"><span>Next: Agent Integration</span><span aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>

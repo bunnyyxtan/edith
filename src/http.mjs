@@ -89,7 +89,7 @@ export function createLimiter({ limit, windowMs }) {
   };
 }
 
-// Page routes resolve to their section's own index.html (/app/... -> app/index.html), else the site's.
+// Clean content routes resolve to their built index.html; app screens share the app shell.
 export async function serveStatic(res, staticDir, pathname) {
   if (!staticDir) return send(res, 404, { error: "Not found." });
   const root = resolve(staticDir);
@@ -100,7 +100,11 @@ export async function serveStatic(res, staticDir, pathname) {
     return send(res, 400, { error: "Bad path." });
   }
   const file = resolve(root, `.${decoded}`);
-  const section = join(root, decoded.split("/")[1] ?? "", "index.html");
+  const contentPages = new Set(["/docs", "/docs/getting-started", "/docs/agents", "/docs/payments", "/terms", "/privacy", "/cookies"]);
+  const clean = decoded.replace(/\/$/, "");
+  const section = contentPages.has(clean) ? join(root, clean.slice(1), "index.html")
+    : clean === "/app" || clean.startsWith("/app/") ? join(root, "app", "index.html")
+    : join(root, "index.html");
   const page = section.startsWith(root + sep) && (await stat(section).catch(() => null))?.isFile() ? section : join(root, "index.html");
   const target = file.startsWith(root + sep) && extname(file) ? file : page;
   try {

@@ -11,7 +11,14 @@
     { "source": "/api/:path*", "destination": "/api/edith?__path=/api/:path*" },
     { "source": "/v1/:path*", "destination": "/api/edith?__path=/v1/:path*" },
     { "source": "/demo/:path*", "destination": "/api/edith?__path=/demo/:path*" },
-    { "source": "/app/:path*", "destination": "/app/index.html" }
+    { "source": "/app/:path*", "destination": "/app/index.html" },
+    { "source": "/docs", "destination": "/docs/index.html" },
+    { "source": "/docs/getting-started", "destination": "/docs/getting-started/index.html" },
+    { "source": "/docs/agents", "destination": "/docs/agents/index.html" },
+    { "source": "/docs/payments", "destination": "/docs/payments/index.html" },
+    { "source": "/terms", "destination": "/terms/index.html" },
+    { "source": "/privacy", "destination": "/privacy/index.html" },
+    { "source": "/cookies", "destination": "/cookies/index.html" }
   ],
   "headers": [
     {

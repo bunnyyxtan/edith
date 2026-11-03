@@ -20,6 +20,7 @@
 .nav-end { justify-self: end; display: flex; align-items: center; gap: 18px; font-size: 14px; }
 @media (hover: hover) { .nav-links a:hover, .nav-text:hover { color: var(--blue); } }
 @media (max-width: 920px) { .nav-links { display: none; } .nav { grid-template-columns: 1fr auto; } }
+@media (max-width: 600px) { .nav-text--github { display: none; } .nav-end { gap: 10px; } }
 
 /* Hero */
 .hero { position: relative; padding: 96px var(--gutter) clamp(72px, 9vw, 120px); overflow: hidden; }

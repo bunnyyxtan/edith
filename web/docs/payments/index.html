@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payments &amp; Memory | Edith Documentation</title>
+  <meta name="description" content="Understand how Edith checks memory, applies limits, asks for wallet approval, verifies Sui payments through Tatum, and saves outcomes to Walrus Memory.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/docs/payments"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="content-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Documentation / Decisions</p><h1>Payments &amp; Memory</h1><p>Edith makes a payment decision before the wallet signs, then checks what actually happened after a transfer is sent. The record of that outcome shapes the next decision.</p></header>
+    <div class="content-grid">
+      <aside class="content-side"><div><h2>Guides</h2><nav aria-label="Documentation"><a href="/docs">Overview</a><a href="/docs/getting-started">Getting Started</a><a href="/docs/agents">Agent Integration</a><a href="/docs/payments" aria-current="page">Payments &amp; Memory</a></nav></div><div><h2>On this page</h2><nav aria-label="On this page"><a href="#payment-journey">Payment journey</a><a href="#limits">Spending limits</a><a href="#memory">What memory changes</a><a href="#states">Failure and uncertainty</a><a href="#infrastructure">The four systems</a><a href="#evidence">Mainnet evidence</a></nav></div></aside>
+      <article class="content-body">
+        <h2 id="payment-journey">From request to outcome</h2>
+        <ol>
+          <li><strong>Recall.</strong> Edith reads earlier outcomes in the wallet's Walrus Memory namespace. A previous paid failure for the same request can stop a repeat before the provider is contacted.</li>
+          <li><strong>Quote.</strong> Edith requests the resource. A paid provider returns HTTP 402 with payment terms. Edith checks the URL, price, payee, network, memory decision, and limits before showing an approval.</li>
+          <li><strong>Approve.</strong> The wallet owner reviews the amount and recipient, then signs the exact SUI transfer. Edith simulates and checks the signed transfer before sending it to the provider. The agent cannot do this step.</li>
+          <li><strong>Settle and verify.</strong> The provider submits the transfer and responds. Edith independently checks the Sui transaction through Tatum's Sui gateway, including what reached the provider.</li>
+          <li><strong>Judge and remember.</strong> Edith classifies the paid response and writes the outcome to Walrus Memory. Activity shows the Sui digest and memory reference when available.</li>
+        </ol>
+        <h2 id="limits">Spending limits</h2>
+        <p>The owner sets <strong>Most per payment</strong> and <strong>Most in 24 hours</strong> on the <a href="/app/limits">Limits</a> screen. Edith checks both before offering a payment and again when reserving a signed payment. The rolling daily total includes payments still settling or uncertain. A hard 0.01 SUI per-call ceiling also applies.</p>
+        <p>Memory may refuse a purchase, but it cannot raise a limit. If historical payments for a wallet have not been reconciled, new payments remain on hold until evidence-backed reconciliation is complete.</p>
+        <h2 id="memory">What memory changes</h2>
+        <p>A paid empty or malformed response, or a rejected response, can cause Edith to refuse the same request later. A temporary HTTP 408, 429, or selected 5xx error causes a 15-minute cooldown before a retry is allowed. Edith can also refuse an endpoint after at least three distinct paid failures make up more than half of its remembered requests, or refuse a price more than twice a previous successful price.</p>
+        <p>These decisions use recorded outcomes, not a guarantee of provider quality. A provider may change, a response may be useful to one person but not another, and a request can fail after payment. Review the specific URL and quote before signing.</p>
+        <h2 id="states">Failed, refused, and uncertain</h2>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Situation</th><th scope="col">What Edith does</th></tr></thead><tbody>
+          <tr><th scope="row">Refused before payment</th><td>Returns a reason. No wallet signature or provider payment is requested.</td></tr>
+          <tr><th scope="row">Wallet decline or pre-send failure</th><td>Does not send the transfer. A new request may need a new quote.</td></tr>
+          <tr><th scope="row">Confirmed chain failure</th><td>Marks the provider payment refused. Sui gas may still have been charged.</td></tr>
+          <tr><th scope="row">Uncertain after signing</th><td>Holds the spending reservation and offers <strong>Check Sui again</strong>. Edith does not treat silence as a failed payment.</td></tr>
+          <tr><th scope="row">Paid but memory save failed</th><td>Keeps the verified payment record. The Walrus blob may be missing, so the next decision may not have that outcome in memory.</td></tr>
+        </tbody></table></div>
+        <p>When a signed transfer remains uncertain, wait for verifiable Sui evidence. Edith can clear it after a confirmed failure or proof that the exact signed transfer can no longer execute. Do not send another payment for the same request just because the provider timed out. Sui transfers that settle are final; Edith cannot refund them.</p>
+        <h2 id="infrastructure">What each system does</h2>
+        <p><strong>Edith</strong> is the decision and approval layer. <strong>Sui</strong> is the public blockchain where wallet-signed transfers settle. <strong>Tatum</strong> supplies the Sui gateway Edith uses to verify transfers. <strong>Walrus Memory</strong> stores wallet-scoped outcome records for future decisions. Vercel runs the site and API; Neon holds application state and the payment ledger.</p>
+        <h2 id="evidence">Inspect a real Mainnet run</h2>
+        <p>The <a href="https://github.com/bunnyyxtan/edith/blob/main/docs/EVIDENCE.md">Mainnet evidence record</a> documents a useful paid quote, an empty paid response, and a repeat request refused without another wallet prompt. It links the Sui transactions and Walrus blobs and explains the independent verification. Public transaction data cannot be deleted from Sui.</p>
+        <a class="next-link" href="/docs/agents"><span>Review the Agent API</span><span aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>

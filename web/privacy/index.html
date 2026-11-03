@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy | Edith</title>
+  <meta name="description" content="What Edith processes and stores when you connect a wallet, authorize agents, approve Sui payments, and use Walrus Memory.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/privacy"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="legal-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Legal</p><h1>Privacy Policy</h1><p>Edith uses wallet identity and request history to make payment decisions. This page explains what the current application processes, what becomes public on Sui, and what you can control.</p><p class="updated">Last updated 3 November 2026</p></header>
+    <article class="content-body">
+      <h2 id="scope">1. Scope</h2>
+      <p>This policy covers the Edith website and API at this domain. A Sui wallet, API provider, block explorer, or other linked service has its own practices. Edith does not ask for your wallet seed phrase or private key.</p>
+      <h2 id="information">2. Information Edith processes</h2>
+      <ul>
+        <li><strong>Wallet sign-in:</strong> your public Sui address, a short-lived challenge message, and its signature are processed to verify that you control the address. Edith sets a signed session cookie after verification. It does not store your private signing key.</li>
+        <li><strong>Agents:</strong> agent names, identifiers, creation and last-use times, revocation status, and a hash of each agent key's secret. The full key is shown once when created and is not stored as a retrievable secret.</li>
+        <li><strong>Requests and payments:</strong> paid URLs, provider and quote details, spending limits, decisions, response summaries, statuses, Sui transaction digests, settlement evidence, and Walrus blob references. Edith also keeps pending approvals, spending reservations, authentication nonces, rate-limit counters, and the provider's used-payment ledger.</li>
+        <li><strong>Browser preference:</strong> the name of the last connected wallet is kept in your browser's local storage to help reconnect it. See the <a href="/cookies">Cookie Policy</a>.</li>
+      </ul>
+      <p>Do not place personal data or secrets in a paid URL unless the provider needs them. URLs and some response details can become part of Edith's activity or memory records.</p>
+      <h2 id="purpose">3. Why Edith uses it</h2>
+      <p>Edith uses these records to authenticate your session, isolate one wallet's agents and history from another's, apply spending limits, prevent duplicate payment submissions, show activity, verify settlement, and decide whether a repeat request should be refused. Infrastructure may also process request metadata needed to operate and protect the service.</p>
+      <h2 id="storage">4. Where records go</h2>
+      <p><strong>Neon Postgres</strong> holds wallet-scoped application records, pending plans, spending state, nonces, rate limits, and the provider payment ledger. <strong>Walrus Memory</strong> holds outcome records in a namespace tied to a wallet address. Those records can include request identifiers, provider, price, result, reason, and transaction digest. Do not treat Walrus Memory as a place for secrets.</p>
+      <p><strong>Vercel</strong> serves the site and runs the API. <strong>Tatum</strong> provides a Sui gateway for checking transfers. <strong>Sui</strong> records settled transactions. API providers receive the requests and payment proof needed to deliver their resources. These services may process network identifiers, addresses, transaction details, and service traffic under their own policies.</p>
+      <h2 id="public-and-private">5. Public chain data and off-chain data</h2>
+      <p>A Sui payment can make the payer address, recipient address, amount, gas use, transaction digest, and on-chain activity publicly visible. Edith cannot erase a confirmed blockchain transaction. Your agent key, session cookie, application activity, spending limits, and database records are off-chain. Walrus blob identifiers can be shared as evidence; do not assume that off-chain storage or external services provide the same privacy as a local file.</p>
+      <h2 id="choices">6. Your choices</h2>
+      <p>You can decline a wallet signature, disconnect an agent key, sign out to clear the Edith session cookie and remembered wallet name, and clear site data in your browser. You can inspect your activity in the app. These actions do not delete previously settled Sui transactions or automatically erase server and Walrus records. There is no self-service deletion control for those records in the current app.</p>
+      <h2 id="retention">7. Retention and security</h2>
+      <p>The session cookie is set for seven days unless you sign out earlier. The remembered wallet name remains in local storage until sign-out or browser clearing. The current application does not specify a fixed automatic deletion period for database and Walrus records. Access controls and scoped keys limit routine access, but no internet service can promise absolute security.</p>
+      <h2 id="contact">8. Contact and changes</h2>
+      <p>This policy may change as the service changes; the date above will be updated. A private privacy contact and the operator's legal identity have not yet been supplied by the project owner. Do not post sensitive information in public GitHub issues. This policy is pending owner and legal review.</p>
+    </article>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cookie Policy | Edith</title>
+  <meta name="description" content="The essential Edith session cookie and local wallet preference used by the current website, with no application analytics or marketing cookies.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/cookies"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="legal-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Legal</p><h1>Cookie Policy</h1><p>Edith uses one application session cookie and one browser storage preference. Both support core wallet use. The current site does not include application analytics or marketing trackers.</p><p class="updated">Last updated 3 November 2026</p></header>
+    <article class="content-body">
+      <h2 id="session-cookie">The session cookie</h2>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Name</th><th scope="col">Purpose</th><th scope="col">Lifetime</th></tr></thead><tbody><tr><th scope="row"><code>edith_session</code></th><td>Keeps you signed in after your wallet verifies a sign-in message. It carries a signed address and expiry, not a wallet private key.</td><td>Seven days, or until you sign out. The browser may remove it earlier.</td></tr></tbody></table></div>
+      <p>The cookie is marked <code>HttpOnly</code> and <code>SameSite=Strict</code>. It is marked <code>Secure</code> on the HTTPS site. Without it, protected app pages and owner actions cannot identify your session.</p>
+      <h2 id="local-storage">Browser local storage</h2>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Key</th><th scope="col">Purpose</th><th scope="col">Lifetime</th></tr></thead><tbody><tr><th scope="row"><code>edith.wallet</code></th><td>Remembers the name of the wallet you last connected so Edith can try to reconnect it.</td><td>No set expiry. Removed when you sign out or clear this site's storage.</td></tr></tbody></table></div>
+      <p>This value is a wallet name, not an agent key, wallet address, or payment authorization. Your wallet extension may keep its own connection information under its separate controls.</p>
+      <h2 id="other-technologies">Analytics and other sites</h2>
+      <p>The current Edith application code does not set analytics, advertising, or marketing cookies and does not use a cookie consent banner. Vercel and linked services may process ordinary request data as part of hosting or when you visit their sites. Their own notices apply to those services. Edith does not control storage set by a wallet extension or by a site you open through an external link.</p>
+      <h2 id="controls">Your controls</h2>
+      <p>Use <strong>Sign out</strong> in the app to clear Edith's session and wallet preference, or clear this site's cookies and storage in your browser. Blocking the session cookie prevents signed-in features from working. Clearing browser storage does not remove on-chain payments, Neon records, or Walrus Memory records. Read the <a href="/privacy">Privacy Policy</a> for those records.</p>
+      <p>This policy describes the current application code and is pending owner and legal review. A private contact channel has not yet been provided.</p>
+    </article>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>

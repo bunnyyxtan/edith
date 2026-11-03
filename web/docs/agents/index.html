@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Integration | Edith Documentation</title>
+  <meta name="description" content="Integrate an agent with Edith's request API, use a scoped agent key, and handle approval and payment result states.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/docs/agents"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="content-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Documentation / Developers</p><h1>Agent Integration</h1><p>Your agent asks Edith about a paid URL. Edith makes the decision and, when needed, waits for the wallet owner. The agent never receives spending authority.</p></header>
+    <div class="content-grid">
+      <aside class="content-side"><div><h2>Guides</h2><nav aria-label="Documentation"><a href="/docs">Overview</a><a href="/docs/getting-started">Getting Started</a><a href="/docs/agents" aria-current="page">Agent Integration</a><a href="/docs/payments">Payments &amp; Memory</a></nav></div><div><h2>On this page</h2><nav aria-label="On this page"><a href="#authentication">Authentication</a><a href="#create-request">Create a request</a><a href="#read-request">Read a result</a><a href="#states">Response states</a><a href="#example">End-to-end example</a><a href="#errors">Errors</a></nav></div></aside>
+      <article class="content-body">
+        <h2 id="authentication">Authentication and scope</h2>
+        <p>On the signed-in <a href="/app/agents">Agents</a> screen, enter an <strong>Agent name</strong> and select <strong>Create agent key</strong>. The secret is shown once. Store it as a secret in the agent's environment, not in source code, browser code, screenshots, or logs. Send it in the <code>Authorization: Bearer &lt;key&gt;</code> header for every <code>/v1/</code> request.</p>
+        <p>Each key belongs to one wallet and can read only requests created with that agent. It cannot call the owner's payment endpoints or approve in the wallet. Disconnecting the agent in Edith revokes the key.</p>
+        <h2 id="create-request">Create a request</h2>
+        <p><code>POST /v1/requests</code> accepts JSON with one field, <code>url</code>. Use an HTTPS paid API address that Edith can reach. The response is a JSON record of the decision. The call itself never spends SUI.</p>
+        <div class="code-head"><span>HTTP · replace the placeholder key</span><button class="copy-code" type="button" data-copy="agent-post">Copy</button></div>
+        <pre><code id="agent-post">curl -X POST 'https://edith-sooty.vercel.app/v1/requests' \
+  -H 'Authorization: Bearer YOUR_AGENT_KEY' \
+  -H 'Content-Type: application/json' \
+  --data '{"url":"https://edith-sooty.vercel.app/demo/quote?ticker=SUI"}'</code></pre>
+        <p>The Quote Desk URL is the bundled Mainnet demo provider. If the request is payable, its state is <code>awaiting</code>. The wallet owner must still approve its 0.001 SUI quote plus network fees.</p>
+        <h2 id="read-request">Read a result or withdraw a request</h2>
+        <p>Use <code>GET /v1/requests/:id</code> with the same key to poll the request. An agent may withdraw an <code>awaiting</code> request with <code>POST /v1/requests/:id/cancel</code>. Cancellation cannot undo a payment that has started.</p>
+        <div class="code-head"><span>HTTP · use the id returned by POST</span><button class="copy-code" type="button" data-copy="agent-get">Copy</button></div>
+        <pre><code id="agent-get">curl 'https://edith-sooty.vercel.app/v1/requests/REQUEST_ID' \
+  -H 'Authorization: Bearer YOUR_AGENT_KEY'</code></pre>
+        <h2 id="states">Read the response states</h2>
+        <div class="table-wrap"><table><thead><tr><th scope="col">State</th><th scope="col">What it means</th><th scope="col">Agent action</th></tr></thead><tbody>
+          <tr><th scope="row"><code>awaiting</code></th><td>A priced request needs owner review. <code>approval.review</code> is the review URL.</td><td>Show the URL and poll. Do not assume approval.</td></tr>
+          <tr><th scope="row"><code>blocked</code></th><td>Memory, a price rule, or a limit refused it before payment.</td><td>Read <code>decision.reason</code>; do not retry blindly.</td></tr>
+          <tr><th scope="row"><code>free</code></th><td>The provider returned data without payment.</td><td>Read <code>status</code> and <code>body</code>.</td></tr>
+          <tr><th scope="row"><code>settling</code></th><td>A signed payment is being processed.</td><td>Keep polling.</td></tr>
+          <tr><th scope="row"><code>paid</code></th><td>Payment was verified. The response may still be useful or worthless.</td><td>Inspect <code>result</code>, <code>body</code>, <code>digest</code>, and <code>blobId</code>.</td></tr>
+          <tr><th scope="row"><code>uncertain</code></th><td>The signed payment might still settle.</td><td>Tell the owner to use <strong>Check Sui again</strong>; do not submit a replacement payment.</td></tr>
+          <tr><th scope="row"><code>cancelled</code>, <code>expired</code>, <code>failed</code>, <code>refused</code></th><td>The request ended without a successful provider payment.</td><td>Read <code>error</code> or the decision; ask again only when appropriate.</td></tr>
+        </tbody></table></div>
+        <p>Amounts are returned as <code>amountMist</code>, a decimal string in MIST. One SUI is 1,000,000,000 MIST. A paid record can include a <code>digest</code> for Sui and a <code>blobId</code> for Walrus Memory. If saving memory failed after settlement, the payment can still be <code>paid</code> without a blob ID.</p>
+        <h2 id="example">A practical agent loop</h2>
+        <p>Set <code>EDITH_AGENT_KEY</code> as a secret in your shell or runtime. Edith includes a small reference client, <code>src/agent.mjs</code>, that creates a request, polls while it is waiting or settling, and prints the result.</p>
+        <div class="code-head"><span>Shell · from a local clone</span><button class="copy-code" type="button" data-copy="agent-cli">Copy</button></div>
+        <pre><code id="agent-cli"># Set EDITH_AGENT_KEY in your environment first.
+EDITH_URL=https://edith-sooty.vercel.app \
+  npm run agent -- 'https://edith-sooty.vercel.app/demo/quote?ticker=SUI'</code></pre>
+        <p>When the client prints an approval URL, the owner opens it in Edith, reviews the quote, and decides in the wallet. The agent polls until the record is final or its own wait period ends. A client timeout is not proof that an on-chain payment failed.</p>
+        <h2 id="errors">HTTP errors</h2>
+        <p>Non-2xx responses contain <code>{"error":"..."}</code>. An invalid or revoked key returns 401, a request outside the agent's scope returns 404, an unsafe or unquotable request can return 422, and request throttling returns 429. Treat these as errors, separate from a successful 200 response whose state is <code>blocked</code>.</p>
+        <a class="next-link" href="/docs/payments"><span>Next: Payments &amp; Memory</span><span aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>

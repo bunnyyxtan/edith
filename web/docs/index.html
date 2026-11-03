@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation | Edith</title>
+  <meta name="description" content="Learn how Edith lets agents request paid APIs while wallet owners control spending, verify Sui payments, and remember outcomes in Walrus Memory.">
+  <link rel="canonical" href="https://edith-sooty.vercel.app/docs"><link rel="icon" href="/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a><header class="content-header" data-content-header></header>
+  <main class="content-wrap" id="main">
+    <header class="content-intro"><p class="content-kicker">Documentation</p><h1>Pay with context.</h1><p>Edith gives an AI agent a way to ask for paid API data without giving it control of your wallet. It checks previous outcomes and your spending limits, asks you to approve the transfer, then records what the payment returned.</p></header>
+    <div class="content-grid">
+      <aside class="content-side"><div><h2>Guides</h2><nav aria-label="Documentation"><a href="/docs" aria-current="page">Overview</a><a href="/docs/getting-started">Getting Started</a><a href="/docs/agents">Agent Integration</a><a href="/docs/payments">Payments &amp; Memory</a></nav></div></aside>
+      <article class="content-body">
+        <h2 id="who-its-for">Who it is for</h2>
+        <p>Edith is for people who let agents use APIs that charge per request. It is especially useful when the same agent may ask again later, after a paid response proved empty, failed, or overpriced.</p>
+        <p>The agent sends a URL to Edith. Edith can refuse it, return a free response, or ask the wallet owner to approve a quoted payment. An agent key cannot sign or approve a transfer.</p>
+        <h2 id="choose-a-guide">Choose a guide</h2>
+        <div class="guide-cards">
+          <a class="guide-card" href="/docs/getting-started"><span>01 · First use</span><strong>Getting Started</strong><small>Connect a wallet, create an agent, set limits, and review your first request.</small></a>
+          <a class="guide-card" href="/docs/agents"><span>02 · Developers</span><strong>Agent Integration</strong><small>Use the agent API, read response states, and poll for a result.</small></a>
+          <a class="guide-card" href="/docs/payments"><span>03 · Decisions</span><strong>Payments &amp; Memory</strong><small>Follow a payment from quote to Sui verification and Walrus Memory.</small></a>
+          <a class="guide-card" href="https://github.com/bunnyyxtan/edith/blob/main/docs/EVIDENCE.md"><span>04 · Evidence</span><strong>Mainnet run</strong><small>Inspect real wallet-approved transactions and their memory records.</small></a>
+        </div>
+        <h2 id="before-you-begin">Before you begin</h2>
+        <p>You need a supported Sui wallet in your browser, such as Slush. The live app uses Sui Mainnet. The guided demo's first two steps each request a real 0.001 SUI payment plus network fees. You can read these guides and inspect the app without paying.</p>
+        <p class="note"><strong>Payment control.</strong> Connecting a wallet and signing in do not move funds. Each paid request needs a separate wallet signature after you review its price and recipient.</p>
+        <a class="next-link" href="/docs/getting-started"><span>Start with Getting Started</span><span aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </main>
+  <footer class="content-footer" data-content-footer></footer><script type="module" src="/src/content.js"></script>
+</body>
+</html>
