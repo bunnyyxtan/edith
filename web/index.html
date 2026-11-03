@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Edith · the payment agent that remembers</title>
+    <meta name="description" content="Edith pays for API calls on Sui and remembers in Walrus Memory every call that wasn't worth it, so your agents never pay twice for the same mistake." />
+    <meta name="theme-color" content="#eef1f5" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/mark.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/doto.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav" data-nav>
+      <a class="nav-logo" href="/" aria-label="Edith home">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="6" width="22" height="5" rx="2.5" /><rect class="mid" x="5" y="13.5" width="14" height="5" rx="2.5" /><rect x="5" y="21" width="22" height="5" rx="2.5" /></svg>
+        <span>Edith</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#product">Product</a>
+        <a href="#how">How it works</a>
+        <a href="#security">Security</a>
+        <a href="#developers">Developers</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav-end">
+        <a class="nav-text" href="https://github.com/bunnyyxtan/edith" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="btn btn--small" href="/app">Open Edith</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-ground" aria-hidden="true"></div>
+        <div class="stage" aria-hidden="true">
+          <svg class="wires" viewBox="0 0 1200 600" preserveAspectRatio="none">
+            <path class="wire" d="M20 120 H400 C445 120 458 152 494 190" />
+            <path class="wire" d="M20 480 H400 C445 480 458 448 494 410" />
+            <path class="wire" d="M706 190 C742 152 755 120 800 120 H1180" />
+            <path class="wire" d="M706 410 C742 448 755 480 800 480 H1180" />
+            <path class="pulse" style="--d: 0s" d="M20 120 H400 C445 120 458 152 494 190" />
+            <path class="pulse" style="--d: 1.4s" d="M20 480 H400 C445 480 458 448 494 410" />
+            <path class="pulse" style="--d: 0.7s" d="M706 190 C742 152 755 120 800 120 H1180" />
+            <path class="pulse" style="--d: 2.1s" d="M706 410 C742 448 755 480 800 480 H1180" />
+          </svg>
+          <span class="node" style="--x: 3.3%; --y: 20%"></span>
+          <span class="node node--hot" style="--x: 33.3%; --y: 20%"></span>
+          <span class="node node--hot" style="--x: 66.7%; --y: 20%"></span>
+          <span class="node" style="--x: 96.7%; --y: 20%"></span>
+          <span class="node node--hot" style="--x: 33.3%; --y: 80%"></span>
+          <span class="node node--hot" style="--x: 66.7%; --y: 80%"></span>
+
+          <span class="tag" style="--x: 19%; --y: 20%; --i: 0">Request</span>
+          <span class="tag" style="--x: 81%; --y: 20%; --i: 1">Memory</span>
+          <span class="tag" style="--x: 11%; --y: 80%; --i: 2">402</span>
+          <span class="tag tag--hot" style="--x: 21.5%; --y: 80%; --i: 3">Price</span>
+          <span class="tag" style="--x: 77.5%; --y: 80%; --i: 4">Walrus</span>
+          <span class="tag" style="--x: 88%; --y: 80%; --i: 5">Sui</span>
+
+          <p class="dots dots--left" data-type="PAY. RECALL."></p>
+          <div class="tile">
+            <div class="tile-face">
+              <svg viewBox="0 0 32 32"><rect x="5" y="6" width="22" height="5" rx="2.5" /><rect class="mid" x="5" y="13.5" width="14" height="5" rx="2.5" /><rect x="5" y="21" width="22" height="5" rx="2.5" /></svg>
+            </div>
+          </div>
+          <p class="dots dots--right" data-type="REFUSE."></p>
+        </div>
+
+        <div class="hero-copy">
+          <h1 id="hero-title" class="hero-title">The payment agent <span class="soft">that remembers what wasn't worth paying for.</span></h1>
+          <p class="hero-lede">Edith pays for API calls on Sui and keeps every outcome in Walrus Memory, so your agents never pay twice for the same mistake.</p>
+          <div class="hero-actions">
+            <a class="btn btn--icon" href="/app"><span class="btn-dots" aria-hidden="true"></span>Try it with your wallet</a>
+            <a class="btn btn--light" href="#how">See how it decides</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="stack" aria-label="Built on">
+        <p class="stack-label">Built on</p>
+        <ul class="stack-list">
+          <li>
+            <a class="stack-logo stack-logo--sui" href="https://sui.io" target="_blank" rel="noreferrer" aria-label="Sui">
+              <svg viewBox="0 0 64 33" aria-hidden="true" fill="currentColor"><path d="M55.1577 20.4589C55.1577 21.358 54.9595 22.1062 54.5697 22.6834C54.184 23.2619 53.6992 23.6965 53.1275 23.9762C52.5612 24.256 51.9962 24.3986 51.4503 24.3986C50.5432 24.3986 49.7854 24.0862 49.2014 23.471C48.6202 22.8531 48.3269 22.0098 48.3269 20.9641V11.5137H45.7656V21.1203C45.7656 22.4036 45.9788 23.4846 46.4012 24.3347C46.8249 25.1835 47.4183 25.8299 48.1639 26.255C48.9054 26.6719 49.7637 26.8838 50.7143 26.8838C51.8632 26.8838 52.8301 26.6108 53.5878 26.073C54.2723 25.5814 54.7992 24.9852 55.1577 24.2994V26.6896H57.719V11.5137H55.1577V20.4603V20.4589Z"/><path d="M41.9441 17.1167C41.3547 16.6984 40.7273 16.363 40.0795 16.1199C39.448 15.8823 38.8668 15.6921 38.3494 15.555L36.3205 15.0091C35.9565 14.914 35.5518 14.7877 35.12 14.6342C34.6908 14.4767 34.2739 14.2744 33.8842 14.0354C33.5012 13.7936 33.1821 13.4909 32.9349 13.1337C32.6986 12.7765 32.5791 12.342 32.5791 11.8409C32.5791 11.2392 32.7529 10.6947 33.0965 10.2234C33.4483 9.74678 33.9466 9.36653 34.5741 9.09357C35.2137 8.81789 35.9728 8.67801 36.8297 8.67801C38.0004 8.67801 38.9999 8.94418 39.8025 9.4711C40.5915 9.98851 41.0478 10.7259 41.1591 11.663L41.1727 11.7825H43.7624L43.757 11.6426C43.7244 10.6159 43.4012 9.68567 42.7996 8.879C42.2062 8.07505 41.3913 7.43406 40.3796 6.97369C39.3706 6.50789 38.2013 6.27295 36.9071 6.27295C35.6129 6.27295 34.4478 6.51196 33.4062 6.9832C32.3673 7.45036 31.5266 8.11715 30.9074 8.96727C30.2908 9.81468 29.9785 10.821 29.9785 11.9576C29.9785 13.3306 30.4511 14.4577 31.3813 15.3078C32.298 16.1457 33.5569 16.7989 35.1227 17.2498L37.5685 17.9492C38.257 18.1407 38.9075 18.3675 39.501 18.6228C40.0808 18.8726 40.5548 19.1999 40.9092 19.5978C41.2528 19.9835 41.428 20.4955 41.428 21.1188C41.428 21.8087 41.2229 22.4198 40.8169 22.9358C40.4068 23.4519 39.8405 23.862 39.1357 24.1554C38.4254 24.4446 37.6092 24.5913 36.7129 24.5913C35.9429 24.5913 35.2123 24.4758 34.5455 24.2491C33.891 24.0182 33.341 23.6651 32.9132 23.1993C32.4949 22.7321 32.2518 22.1319 32.1907 21.4149L32.1799 21.2913H29.4258L29.4366 21.4366C29.5154 22.5434 29.8603 23.5307 30.462 24.3686C31.069 25.2065 31.9096 25.8678 32.9621 26.335C34.0159 26.7994 35.2789 27.0357 36.7143 27.0357C38.2543 27.0357 39.5838 26.7736 40.6634 26.2562C41.7553 25.7361 42.5973 25.0245 43.1636 24.1404C43.738 23.255 44.03 22.2514 44.03 21.1555C44.03 20.2035 43.8304 19.3873 43.4379 18.7287C43.0481 18.0741 42.5457 17.5323 41.9441 17.1154V17.1167Z"/><path d="M63.0699 7.61136C63.0699 7.14692 62.892 6.74494 62.543 6.4163C62.2008 6.08902 61.7852 5.92334 61.3045 5.92334C60.8238 5.92334 60.4055 6.08902 60.0565 6.41766C59.7129 6.7463 59.5391 7.14828 59.5391 7.61272C59.5391 8.07717 59.7129 8.47778 60.0578 8.80778C60.4055 9.13507 60.8251 9.30075 61.3059 9.30075C61.7866 9.30075 62.1628 9.15001 62.4941 8.85396L62.5091 8.84038C62.5213 8.82951 62.5335 8.81865 62.5457 8.80643L62.5946 8.7589C62.9124 8.4384 63.0726 8.05272 63.0726 7.61136H63.0699Z"/><path d="M62.5651 11.5117H60.0039V26.6877H62.5651V11.5117Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.6338 13.746C21.9783 15.434 22.7822 17.5688 22.7822 19.8911C22.7822 22.2133 21.9538 24.4133 20.5741 26.1108L20.4546 26.2575L20.4233 26.0714C20.3962 25.9139 20.3649 25.7537 20.3283 25.5934C19.637 22.5569 17.3854 19.9535 13.6794 17.8445C11.1765 16.424 9.74383 14.7156 9.36766 12.7723C9.12457 11.5161 9.30519 10.2545 9.6542 9.17352C10.0032 8.09389 10.522 7.18808 10.9633 6.64352L12.4056 4.8808C12.6581 4.57117 13.1321 4.57117 13.3847 4.8808L20.6352 13.746H20.6338ZM22.914 11.9846L13.2502 0.169807C13.0656 -0.0556256 12.7206 -0.0556256 12.5359 0.169807L2.87358 11.9846L2.84235 12.024C1.06469 14.2308 0 17.0351 0 20.088C0 27.1972 5.77296 32.9607 12.8931 32.9607C20.0132 32.9607 25.7862 27.1972 25.7862 20.088C25.7862 17.0351 24.7215 14.2308 22.9438 12.0254L22.9126 11.986L22.914 11.9846ZM5.1863 13.708L6.05 12.6501L6.0758 12.8456C6.09617 13.0004 6.12198 13.1552 6.15185 13.3114C6.71136 16.2461 8.70901 18.6919 12.0484 20.5864C14.9519 22.2391 16.6426 24.139 17.1288 26.2222C17.3325 27.0913 17.3678 27.9469 17.2795 28.6951L17.2741 28.7413L17.232 28.7617C15.9215 29.4013 14.448 29.7612 12.8917 29.7612C7.43111 29.7612 3.00395 25.3422 3.00395 19.8897C3.00395 17.5485 3.82012 15.3987 5.18358 13.7053L5.1863 13.708Z"/></svg>
+            </a>
+            <span class="stack-role">Settlement</span>
+          </li>
+          <li>
+            <a class="stack-logo stack-logo--walrus" href="https://walrus.xyz" target="_blank" rel="noreferrer" aria-label="Walrus Memory">
+              <svg viewBox="0 0 124 29" aria-hidden="true" fill="currentColor"><path d="M34.1435 14.1431C34.5465 12.879 35.1193 11.8005 35.8541 10.8998C36.5928 10.0031 37.4658 9.28805 38.4732 8.7666C39.4806 8.24119 40.5511 7.98047 41.677 7.98047C43.3164 7.98047 44.711 8.47032 45.8684 9.45001C47.022 10.4297 47.9069 11.7017 48.531 13.2582H48.934V8.17799H54.6977V28.325H48.934V23.2448H48.531C47.9148 24.8052 47.0259 26.0733 45.8684 27.053C44.7149 28.0327 43.3164 28.5225 41.677 28.5225C40.5472 28.5225 39.4885 28.2618 38.493 27.7364C37.4974 27.211 36.6284 26.4999 35.8738 25.6032C35.1232 24.7064 34.5425 23.6201 34.1396 22.3599C33.7366 21.0958 33.5352 19.725 33.5352 18.2515C33.5352 16.778 33.7366 15.4033 34.1396 14.1431H34.1435ZM39.8045 20.3294C40.0336 20.9615 40.3576 21.5106 40.7724 21.9807C41.1911 22.4508 41.6849 22.8221 42.2656 23.0907C42.8424 23.3593 43.4666 23.4937 44.1381 23.4937C44.8097 23.4937 45.4694 23.3593 46.0304 23.0907C46.5953 22.8221 47.0773 22.4587 47.4802 22.0044C47.8832 21.5461 48.211 21.001 48.4678 20.3729C48.7246 19.7408 48.851 19.0376 48.851 18.2554C48.851 17.4733 48.7246 16.774 48.4678 16.138C48.211 15.506 47.8832 14.9648 47.4802 14.5065C47.0773 14.0483 46.5953 13.6888 46.0304 13.4202C45.4655 13.1515 44.8334 13.0172 44.1381 13.0172C43.4429 13.0172 42.8424 13.1515 42.2656 13.4202C41.6889 13.6888 41.1911 14.0601 40.7724 14.5302C40.3536 15.0003 40.0336 15.5494 39.8045 16.1815C39.5754 16.8135 39.4608 17.5049 39.4608 18.2594C39.4608 19.0139 39.5754 19.7013 39.8045 20.3373V20.3294Z"/><path d="M57.6055 0H63.5311V28.3283H57.6055V0Z"/><path d="M66.4414 8.18194H72.1617V13.2621H72.6871C73.1453 11.7294 73.967 10.4811 75.164 9.51322C76.361 8.54537 78.032 8.03577 80.1811 7.98047V14.309H78.3678C77.3486 14.309 76.4598 14.4315 75.7092 14.6724C74.9586 14.9134 74.3344 15.2847 73.8367 15.7825C73.3389 16.2802 72.9676 16.9163 72.7266 17.6984C72.4856 18.4767 72.3632 19.4445 72.3632 20.598V28.3329H66.4375V8.18194H66.4414Z"/><path d="M82.2188 8.18144H88.101V18.6974C88.101 20.2578 88.4012 21.4271 89.0096 22.2014C89.614 22.9796 90.491 23.3707 91.6484 23.3707C92.1857 23.3707 92.7032 23.264 93.201 23.0468C93.6987 22.8334 94.153 22.4779 94.5718 21.9762C94.9905 21.4785 95.3303 20.8148 95.5989 19.9813C95.8675 19.1517 96.0018 18.1009 96.0018 16.8407V8.17749H101.967V28.3245H96.2033V23.2877H95.6779C95.4369 24.066 95.113 24.781 94.71 25.421C94.3071 26.0649 93.8172 26.6219 93.2405 27.092C92.6637 27.5621 92.004 27.9334 91.2653 28.202C90.5265 28.4707 89.7404 28.605 88.9068 28.605C87.9113 28.605 87.0067 28.443 86.1889 28.1191C85.3712 27.7951 84.672 27.2776 84.0952 26.5666C83.5184 25.8555 83.0602 24.9469 82.7244 23.8487C82.3886 22.7465 82.2227 21.4311 82.2227 19.8983V8.17749L82.2188 8.18144Z"/><path d="M109.961 21.6364C110.068 22.6043 110.451 23.3312 111.111 23.8131C111.767 24.299 112.77 24.536 114.113 24.536C114.544 24.536 114.943 24.4965 115.322 24.4136C115.697 24.3346 116.025 24.22 116.31 24.0699C116.594 23.9237 116.823 23.7262 116.997 23.4852C117.171 23.2442 117.258 22.9598 117.258 22.6398C117.258 22.2883 117.183 22.0275 117.036 21.8537C116.886 21.6799 116.693 21.5179 116.452 21.3678C116.211 21.2216 115.95 21.1071 115.666 21.0241C115.381 20.9412 115.053 20.8622 114.678 20.7832L111.052 20.1787C110.273 20.0444 109.491 19.843 108.713 19.5743C107.935 19.3057 107.235 18.9502 106.619 18.5038C106.003 18.0574 105.497 17.4846 105.11 16.7696C104.719 16.0585 104.525 15.2052 104.525 14.2137C104.525 12.9495 104.786 11.8908 105.312 11.0336C105.837 10.1764 106.52 9.48898 107.366 8.97938C108.211 8.46978 109.159 8.10635 110.206 7.89302C111.253 7.67575 112.312 7.56909 113.386 7.56909C115.081 7.56909 116.503 7.76266 117.657 8.15375C118.81 8.54484 119.758 9.06234 120.497 9.70625C121.236 10.3502 121.793 11.1047 122.168 11.9619C122.543 12.8192 122.8 13.7199 122.934 14.664H116.93C116.851 13.8344 116.527 13.1826 115.962 12.7086C115.401 12.2385 114.536 12.0054 113.382 12.0054C112.979 12.0054 112.608 12.033 112.272 12.0844C111.936 12.1397 111.632 12.2464 111.364 12.4083C111.095 12.5703 110.878 12.7718 110.72 13.0127C110.558 13.2537 110.479 13.5381 110.479 13.8581C110.479 14.0991 110.538 14.3282 110.66 14.5415C110.783 14.7588 110.945 14.9247 111.146 15.0432C111.348 15.1657 111.581 15.2645 111.853 15.3435C112.122 15.4225 112.418 15.5054 112.738 15.5844L116.527 16.2679C117.333 16.4022 118.131 16.5957 118.925 16.8525C119.715 17.1093 120.434 17.4688 121.082 17.9389C121.73 18.409 122.231 18.9857 122.591 19.6731C122.95 20.3605 123.136 21.1979 123.136 22.1895C123.136 23.3707 122.903 24.3938 122.433 25.251C121.963 26.1083 121.319 26.8154 120.501 27.3685C119.683 27.9176 118.727 28.3284 117.641 28.597C116.554 28.8657 115.377 29 114.113 29C112.446 29 111.004 28.8064 109.779 28.4153C108.555 28.0242 107.536 27.4949 106.718 26.8233C105.9 26.1517 105.268 25.3696 104.826 24.4649C104.379 23.5682 104.107 22.6201 104 21.6246H109.965L109.961 21.6364Z"/><path d="M11.9975 23.1732L13.4117 8.17749H20.2618L21.6761 23.1732L22.4701 23.3272C23.2286 21.5535 25.7174 15.8729 26.2428 8.18144H33.6577L28.0955 28.3284H18.4407L17.054 18.2549H16.6353L15.2487 28.3284H5.58197L0 8.18144H7.43078C7.95619 15.8768 10.441 21.5535 11.2034 23.3272L11.9975 23.1732Z"/></svg>
+            </a>
+            <span class="stack-role">Long-term memory</span>
+          </li>
+          <li>
+            <a class="stack-logo stack-logo--tatum" href="https://tatum.io" target="_blank" rel="noreferrer" aria-label="Tatum">
+              <svg viewBox="6 6 214 44" aria-hidden="true" fill="currentColor"><path d="M44.8727 24.8353H31.2197V49.8898H44.8727V24.8353Z"/><path d="M62.4129 6.17548H37.332V18.7161H62.4069L62.4129 6.17548Z"/><path d="M31.2202 12.2947H6.16602V24.8353H31.2202V12.2947Z"/><path d="M194.418 20.4467H189.085V50.0794H194.172V30.5663H194.409L204.483 50.0824H204.676L214.788 30.5663H214.981V50.0794H220.003V20.4467H215.155L204.83 40.5406H204.679L194.418 20.4467ZM79.4048 50.0794H84.4418V24.856H97.7096V20.4467H84.4595V24.856H68.8096V29.2565H79.4048V50.0794ZM123.658 20.4467V24.4174H133.214V50.0794H138.301V24.4263H147.847V20.4467H123.658ZM175.761 43.1187C175.776 43.4541 175.725 43.7892 175.613 44.1055C175.485 44.4202 175.294 44.7056 175.053 44.9441C174.822 45.1932 174.536 45.3841 174.217 45.5012C173.9 45.6136 173.564 45.6649 173.228 45.6523H162.215C161.879 45.6675 161.544 45.6161 161.228 45.5012C160.903 45.3835 160.609 45.1929 160.369 44.9441C160.127 44.71 159.944 44.4228 159.832 44.1055C159.71 43.7916 159.659 43.4547 159.681 43.1187V20.4467H154.594V42.8816C154.547 43.7802 154.678 44.6791 154.979 45.5271C155.279 46.3752 155.744 47.1557 156.346 47.8241C156.949 48.4924 157.677 49.0356 158.489 49.4226C159.301 49.8096 160.181 50.0328 161.08 50.0794C161.323 50.0928 161.566 50.0928 161.809 50.0794H173.66C174.558 50.1262 175.457 49.9954 176.304 49.6946C177.152 49.3939 177.932 48.929 178.6 48.3266C179.268 47.7242 179.81 46.996 180.196 46.1838C180.583 45.3715 180.805 44.4911 180.851 43.5928C180.866 43.358 180.866 43.1224 180.851 42.8876V20.4467H175.761V43.1187ZM113.333 38.1671H103.478L108.331 26.231H108.503L113.333 38.1671ZM111.188 20.4467H105.926L93.603 50.0794H98.5629L101.626 42.5675H115.131L118.177 50.0617H123.46L111.188 20.4467Z"/></svg>
+            </a>
+            <span class="stack-role">Sui gateway</span>
+          </li>
+          <li>
+            <span class="stack-logo stack-logo--402" role="img" aria-label="HTTP 402"><span aria-hidden="true">402</span></span>
+            <span class="stack-role">x402 payment terms</span>
+          </li>
+        </ul>
+      </section>
+
+      <section id="problem" class="section problem" aria-labelledby="problem-title">
+        <div class="head">
+          <p class="eyebrow" data-reveal>The problem</p>
+          <h2 id="problem-title" class="split" data-reveal style="--i: 1">Agents can pay now. <span class="soft">They still can't tell what's worth paying for.</span></h2>
+        </div>
+        <ol class="problem-list">
+          <li data-reveal style="--i: 0">
+            <span class="index" aria-hidden="true">01</span>
+            <h3>It pays for empty answers</h3>
+            <p>A paid API takes the money and returns an empty body or an error. Nothing in the agent notices.</p>
+          </li>
+          <li data-reveal style="--i: 1">
+            <span class="index" aria-hidden="true">02</span>
+            <h3>It repeats the mistake</h3>
+            <p>Every session starts with a blank slate, so tomorrow the same bad request gets paid for again.</p>
+          </li>
+          <li data-reveal style="--i: 2">
+            <span class="index" aria-hidden="true">03</span>
+            <h3>Payments are final</h3>
+            <p>A settled transfer on Sui cannot be reversed. The only moment to be careful is before paying.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="product" class="section product" aria-labelledby="product-title">
+        <div class="head head--row">
+          <div>
+            <p class="eyebrow" data-reveal>The product</p>
+            <h2 id="product-title" class="split" data-reveal style="--i: 1">A judgment step <span class="soft">in front of every payment.</span></h2>
+          </div>
+          <p class="body" data-reveal style="--i: 2">Before a single SUI moves, Edith reads what it remembers about the request and the endpoint, checks the price, and decides.</p>
+        </div>
+
+        <div class="engine" data-engine data-reveal style="--i: 2">
+          <div class="engine-cases" role="tablist" aria-label="Situations">
+            <button type="button" role="tab" aria-selected="true" aria-controls="engine-panel" data-case="0"><span class="case-n">01</span>A request it has never seen</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="engine-panel" data-case="1"><span class="case-n">02</span>A request that came back empty</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="engine-panel" data-case="2"><span class="case-n">03</span>A provider having a bad minute</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="engine-panel" data-case="3"><span class="case-n">04</span>A sudden jump in price</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="engine-panel" data-case="4"><span class="case-n">05</span>An endpoint that keeps failing</button>
+            <span class="engine-progress" aria-hidden="true"><span data-engine-progress></span></span>
+          </div>
+          <div id="engine-panel" class="engine-panel" role="tabpanel" aria-live="polite">
+            <ol class="checks" data-checks></ol>
+            <div class="verdict">
+              <p class="verdict-label">Decision</p>
+              <p class="verdict-word dots" data-verdict></p>
+              <p class="verdict-note" data-verdict-note></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="memory" class="section memory" aria-labelledby="memory-title">
+        <div class="memory-copy">
+          <p class="eyebrow" data-reveal>Memory</p>
+          <h2 id="memory-title" class="split" data-reveal style="--i: 1">Agents forget. <span class="soft">Edith keeps the record.</span></h2>
+          <p class="body" data-reveal style="--i: 2">Every paid call becomes a memory on Walrus: what was asked, what it cost, what came back, and whether it was worth it. The next session starts from everything the last one learned.</p>
+          <dl class="facts" data-reveal style="--i: 3">
+            <div><dt>Written</dt><dd>After every paid call</dd></div>
+            <div><dt>Read</dt><dd>Before every payment</dd></div>
+            <div><dt>Stored on</dt><dd>Walrus Memory</dd></div>
+            <div><dt>Survives</dt><dd>Restarts, redeploys, new machines</dd></div>
+          </dl>
+        </div>
+        <figure class="memory-figure" data-reveal style="--i: 1">
+          <canvas class="dotmark" data-dotmark aria-hidden="true"></canvas>
+        </figure>
+      </section>
+
+      <section id="how" class="section how" aria-labelledby="how-title">
+        <div class="head">
+          <p class="eyebrow" data-reveal>How it works</p>
+          <h2 id="how-title" class="split" data-reveal style="--i: 1">Five steps <span class="soft">between a price and a payment.</span></h2>
+        </div>
+        <ol class="steps">
+          <li class="step" data-step><span class="step-n">01</span><h3>Recall</h3><p>Every past outcome for this endpoint is read from Walrus Memory.</p><span class="step-on">Walrus Memory</span></li>
+          <li class="step" data-step><span class="step-n">02</span><h3>Judge</h3><p>The policy weighs the request's history, the endpoint's record and the price.</p><span class="step-on">Edith policy</span></li>
+          <li class="step" data-step><span class="step-n">03</span><h3>Pay</h3><p>Your wallet signs the exact amount quoted, to the exact payee. Nothing moves without that signature.</p><span class="step-on">Your wallet, Sui</span></li>
+          <li class="step" data-step><span class="step-n">04</span><h3>Verify</h3><p>The transfer settles on Sui, and Edith confirms what arrived through Tatum, not the provider's word.</p><span class="step-on">Tatum gateway</span></li>
+          <li class="step" data-step><span class="step-n">05</span><h3>Remember</h3><p>Worth it or not, the outcome is written back for every session after this one.</p><span class="step-on">Walrus Memory</span></li>
+        </ol>
+        <div class="steps-wire" aria-hidden="true"><span data-wire></span><i class="steps-pulse"></i></div>
+      </section>
+
+      <section id="security" class="section security" aria-labelledby="security-title">
+        <div class="head head--row">
+          <div>
+            <p class="eyebrow" data-reveal>Security and control</p>
+            <h2 id="security-title" class="split" data-reveal style="--i: 1">Careful with money, <span class="soft">by design.</span></h2>
+          </div>
+          <p class="body" data-reveal style="--i: 2">Limits live in code, not in a prompt. An agent cannot talk its way past them.</p>
+        </div>
+        <ul class="rules">
+          <li data-reveal style="--i: 0"><h3>Your keys stay yours</h3><p>Edith never holds a private key. Signing in proves the wallet is yours and grants no spending power. Every payment is a transfer your wallet signs.</p></li>
+          <li data-reveal style="--i: 1"><h3>Limits you set</h3><p>A most-per-payment and a most-per-day, checked before a price is shown and again before a signed payment is sent. Never above 0.01 SUI a call.</p></li>
+          <li data-reveal style="--i: 2"><h3>Checked before it leaves</h3><p>Each signed transfer is simulated first and sent only if it pays the exact quoted amount, to the quoted provider, from your account.</p></li>
+          <li data-reveal style="--i: 3"><h3>Every payment spent once</h3><p>Quotes expire in five minutes and providers keep a ledger of settled transactions, so one payment can never unlock two answers.</p></li>
+          <li data-reveal style="--i: 4"><h3>Outages don't cost twice</h3><p>If an answer goes missing, Edith checks Sui before anything else. A 5xx earns a cool-down, not a second payment.</p></li>
+          <li data-reveal style="--i: 5" class="rules-open"><h3>Open source</h3><p>MIT licensed. Read every line that touches your money, then run it on your own keys.</p><a href="https://github.com/bunnyyxtan/edith" target="_blank" rel="noreferrer">Read the source</a></li>
+        </ul>
+      </section>
+
+      <section id="developers" class="section developers" aria-labelledby="developers-title">
+        <div class="developers-copy">
+          <p class="eyebrow" data-reveal>Developers</p>
+          <h2 id="developers-title" class="split" data-reveal style="--i: 1">Plan, then pay. <span class="soft">Two calls.</span></h2>
+          <p class="body" data-reveal style="--i: 2">To try Edith, open the app and connect your wallet: no setup needed. To run your own instance, self-host it next to your agent. Providers add one middleware to price their API in SUI.</p>
+          <ul class="developers-list" data-reveal style="--i: 3">
+            <li>Node.js 24 or newer</li>
+            <li>A Tatum API key</li>
+            <li>A Walrus Memory account</li>
+          </ul>
+        </div>
+        <div class="code" data-reveal style="--i: 1">
+          <div class="code-tabs" role="tablist" aria-label="Examples">
+            <button type="button" role="tab" aria-selected="true" data-code-tab="0">Quick start</button>
+            <button type="button" role="tab" aria-selected="false" data-code-tab="1">Agent API</button>
+            <button type="button" role="tab" aria-selected="false" data-code-tab="2">Provider</button>
+          </div>
+<pre class="code-body" data-code="0"><code><span class="c">$</span> git clone https://github.com/bunnyyxtan/edith
+<span class="c">$</span> npm install
+<span class="c">$</span> cp .env.example .env    <span class="m"># Tatum key, Walrus Memory account</span>
+<span class="c">$</span> npm run setup:wallets
+<span class="c">$</span> npm start
+<span class="m">Edith listening on http://localhost:4030</span></code></pre>
+<pre class="code-body" data-code="1" hidden><code><span class="m"># Your agent asks with its own key. It can never pay.</span>
+<span class="c">POST</span> /v1/requests
+Authorization: Bearer ek_…
+{ "url": "https://api.example.com/v1/quote" }
+<span class="m">→ blocked (and why) · free · awaiting your approval</span>
+
+<span class="m"># You approve in the app; your wallet signs. Then:</span>
+<span class="c">GET</span> /v1/requests/:id
+<span class="m">→ paid, with the answer and the Sui transaction</span></code></pre>
+<pre class="code-body" data-code="2" hidden><code><span class="c">import</span> { createPaywall, createLedger } <span class="c">from</span> "./paywall.mjs";
+
+<span class="c">const</span> paywall = createPaywall({
+  secret, network: "mainnet", payTo, price: 1_000_000n,
+  ledger: createLedger("data/used-digests.txt"),
+  settlePayment: (signed, terms) =&gt; settlePayment(client, signed, terms),
+});
+
+<span class="m">// No X-PAYMENT header: answer 402 with signed terms.</span>
+<span class="c">if</span> (!header) <span class="c">return</span> send(res, 402, paywall.requirements(resource));
+<span class="c">await</span> paywall.redeem(resource, header);</code></pre>
+        </div>
+      </section>
+
+      <section id="faq" class="section faq" aria-labelledby="faq-title">
+        <div class="head">
+          <p class="eyebrow" data-reveal>FAQ</p>
+          <h2 id="faq-title" class="split" data-reveal style="--i: 1">Questions, <span class="soft">answered.</span></h2>
+        </div>
+        <div class="faq-list" data-reveal style="--i: 2">
+          <details name="faq" open>
+            <summary>What counts as a call that wasn't worth it?</summary>
+            <p>An empty or malformed response, or a 4xx error after payment. That exact request is never paid for again. A 5xx is treated as temporary: the request cools down for fifteen minutes before one retry.</p>
+          </details>
+          <details name="faq">
+            <summary>Does Edith hold my money or my keys?</summary>
+            <p>No. You connect your own Sui wallet, and it signs each payment you approve. Edith checks the signed transfer and hands it to the provider, but it never holds a key, a seed phrase or a balance.</p>
+          </details>
+          <details name="faq">
+            <summary>Can a payment be refunded?</summary>
+            <p>No. Payments settle on Sui and are final, and Edith never claims otherwise. That is why every decision happens before paying, not after.</p>
+          </details>
+          <details name="faq">
+            <summary>Which APIs can Edith pay?</summary>
+            <p>Any API that answers with an HTTP 402 and x402 payment terms in SUI, signed the way Edith's paywall signs them. The paywall ships in the same repository, so a provider can adopt it in an afternoon.</p>
+          </details>
+          <details name="faq">
+            <summary>Where does the memory live?</summary>
+            <p>In Walrus Memory, under a namespace owned by your account. It is read before each payment and written after each paid call, so it survives restarts and moves between machines.</p>
+          </details>
+          <details name="faq">
+            <summary>What does Edith cost?</summary>
+            <p>Edith is free and open source under the MIT license. You pay only the prices the APIs ask, plus Sui gas.</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="close" aria-labelledby="close-title">
+        <h2 id="close-title" class="dots dots--close" data-type="NEVER TWICE." data-reveal></h2>
+        <p class="body close-body" data-reveal style="--i: 1">Give your agents a memory for money. Set up Edith in a few minutes and let every payment teach the next one.</p>
+        <div class="hero-actions" data-reveal style="--i: 2">
+          <a class="btn btn--icon" href="/app"><span class="btn-dots" aria-hidden="true"></span>Open Edith</a>
+          <a class="btn btn--light" href="https://github.com/bunnyyxtan/edith" target="_blank" rel="noreferrer">View on GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-cols">
+        <div>
+          <a class="nav-logo" href="/" aria-label="Edith home">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="6" width="22" height="5" rx="2.5" /><rect class="mid" x="5" y="13.5" width="14" height="5" rx="2.5" /><rect x="5" y="21" width="22" height="5" rx="2.5" /></svg>
+            <span>Edith</span>
+          </a>
+          <p class="footer-note">The payment agent that remembers what wasn't worth paying for.</p>
+        </div>
+        <div><h3>Product</h3><a href="#product">Decisions</a><a href="#memory">Memory</a><a href="#security">Security</a></div>
+        <div><h3>Developers</h3><a href="#developers">Quick start</a><a href="https://github.com/bunnyyxtan/edith" target="_blank" rel="noreferrer">Source code</a><a href="#faq">FAQ</a></div>
+        <div><h3>Built on</h3><a href="https://sui.io" target="_blank" rel="noreferrer">Sui</a><a href="https://docs.wal.app/walrus-memory" target="_blank" rel="noreferrer">Walrus Memory</a><a href="https://docs.tatum.io/reference/rpc-sui" target="_blank" rel="noreferrer">Tatum</a></div>
+      </div>
+      <p class="footer-word dots" aria-hidden="true" data-type="EDITH"></p>
+      <p class="footer-legal">© 2026 Edith. MIT licensed. Set in Geist and Doto under the SIL Open Font License.</p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

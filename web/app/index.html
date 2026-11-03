@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Edith</title>
+    <meta name="description" content="Connect your Sui wallet and let Edith check every paid API request against your limits and its memory before you approve a payment." />
+    <meta name="theme-color" content="#eef1f5" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/mark.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/doto.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body class="app">
+    <a class="skip" href="#view">Skip to content</a>
+
+    <header class="bar">
+      <div class="bar-inner">
+        <a class="nav-logo" href="/" aria-label="Edith home">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="6" width="22" height="5" rx="2.5" /><rect class="mid" x="5" y="13.5" width="14" height="5" rx="2.5" /><rect x="5" y="21" width="22" height="5" rx="2.5" /></svg>
+          <span>Edith</span>
+        </a>
+        <nav class="nav" aria-label="App" data-nav></nav>
+        <div class="bar-end" data-account></div>
+      </div>
+    </header>
+
+    <main id="view" class="view" tabindex="-1" data-view>
+      <div class="boot" aria-label="Loading Edith"><span></span><span></span><span></span></div>
+    </main>
+
+    <dialog class="wallet-modal" data-wallet-modal aria-labelledby="wallet-title">
+      <form method="dialog" class="modal-close-form"><button class="icon-btn modal-close" aria-label="Close">
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
+      </button></form>
+      <div class="wm-body" data-wallet-body></div>
+    </dialog>
+
+    <dialog class="detail" data-detail aria-labelledby="detail-title">
+      <form method="dialog" class="modal-close-form"><button class="icon-btn modal-close" aria-label="Close">
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
+      </button></form>
+      <div class="detail-body" data-detail-body></div>
+    </dialog>
+
+    <div class="toast" data-toast role="status" aria-live="polite"></div>
+    <script type="module" src="/src/app/main.js"></script>
+  </body>
+</html>

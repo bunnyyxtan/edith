@@ -1,0 +1,73 @@
+/* Edith shared foundation: fonts, tokens, reset, buttons and the logo. Used by the site and the console.
+   One hue family only: Sea #4da2ff for light and motion, deep Sui blue for type and actions, Ocean for text. */
+
+@font-face { font-family: "Geist"; src: url("/fonts/geist.woff2") format("woff2"); font-weight: 300 700; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono.woff2") format("woff2"); font-weight: 400 600; font-display: swap; }
+@font-face { font-family: "Doto"; src: url("/fonts/doto.woff2") format("woff2"); font-weight: 400 900; font-display: swap; }
+
+:root {
+  color-scheme: light;
+  --ground: #eef1f5;
+  --surface: #ffffff;
+  --rail: #d3d9e2;
+  --line: #e4e9f0;
+  --sea: #4da2ff;
+  --aqua: #dcecff;
+  --blue: #0b5bd3;
+  --blue-press: #0a4fb8;
+  --ocean: #011829;
+  --ink-2: #33415a;
+  --soft: #7d8799;
+  --sans: "Geist", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --dot: "Doto", "Geist Mono", monospace;
+  --gutter: clamp(16px, 3vw, 40px);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* A fine dot grid that gives white surfaces a texture of their own. */
+  --dotgrid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='1.5' cy='1.5' r='1' fill='%23cfdcf0'/%3E%3C/svg%3E");
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { background: var(--ground); color: var(--ocean); font: 400 16px/1.5 var(--sans); letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+img, svg, canvas { display: block; max-width: 100%; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+::selection { background: var(--sea); color: #fff; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 6px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.skip { position: fixed; left: 12px; top: 12px; z-index: 50; padding: 10px 14px; background: var(--blue); color: #fff; border-radius: 8px; transform: translateY(-200%); }
+.skip:focus-visible { transform: none; }
+
+@keyframes drift { to { background-position: 160px 160px; } }
+@keyframes ring { from { opacity: 0.9; transform: scale(0.5); } to { opacity: 0; transform: scale(1.6); } }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 18px; border-radius: 12px;
+  background: var(--blue); color: #fff; font-weight: 500; text-decoration: none; white-space: nowrap; border: 1px solid var(--blue);
+  transition: background-color 200ms var(--ease), transform 200ms var(--ease), border-color 200ms var(--ease);
+}
+.btn:active { transform: scale(0.97); }
+.btn--small { min-height: 38px; padding: 0 14px; border-radius: 10px; font-size: 14px; }
+.btn--icon { padding-left: 7px; }
+.btn--light { background: var(--surface); color: var(--ocean); border-color: var(--rail); }
+.btn-dots { position: relative; width: 32px; height: 32px; border-radius: 8px; background: var(--sea); flex: none; transition: transform 500ms var(--ease); }
+.btn-dots::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: #fff;
+  box-shadow: -7px -7px #fff, 0 -7px #fff, 7px -7px #fff, -7px 0 #fff, 7px 0 #fff, -7px 7px #fff, 0 7px #fff, 7px 7px #fff;
+  animation: twinkle 2.4s steps(1) infinite;
+}
+@keyframes twinkle { 50% { box-shadow: -7px -7px #fff, 0 -7px transparent, 7px -7px #fff, -7px 0 transparent, 7px 0 #fff, -7px 7px #fff, 0 7px #fff, 7px 7px transparent; } }
+@media (hover: hover) {
+  .btn:hover { background: var(--blue-press); }
+  .btn--light:hover { background: var(--surface); border-color: var(--sea); }
+  .btn:hover .btn-dots { transform: rotate(90deg); }
+}
+
+
+/* Logo */
+.nav-logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; text-decoration: none; }
+.nav-logo svg { width: 30px; height: 30px; fill: var(--blue); }
+.nav-logo svg .mid { fill: var(--sea); }
