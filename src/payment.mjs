@@ -8,9 +8,20 @@
 //    nobody else can see it, let alone redeem it.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { TransactionDataBuilder } from "@mysten/sui/transactions";
-import { fromBase64 } from "@mysten/sui/utils";
+import { fromBase64, normalizeStructTag } from "@mysten/sui/utils";
 
 export const SUI_COIN = "0x2::sui::SUI";
+const SUI_COIN_TAG = normalizeStructTag(SUI_COIN); // 0x000…0002::sui::SUI
+
+// True only for the native coin: package 0x2, module sui, type SUI, no type parameters, after normalizing
+// the address. A coin from any other package named ::sui::SUI is not SUI.
+export function isSuiCoin(type) {
+  try {
+    return normalizeStructTag(String(type)) === SUI_COIN_TAG;
+  } catch {
+    return false;
+  }
+}
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 const DIGEST_RE = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 const ADDRESS_RE = /^0x[0-9a-f]{64}$/;
@@ -76,7 +87,7 @@ export function readPaymentHeader(header) {
 export function parseTerms(body, network, maxAmount) {
   const terms = body?.accepts?.find((t) => t.scheme === "exact" && t.network === `sui:${network}`);
   if (!terms) throw new PaymentError(`no exact-scheme terms for sui:${network}`);
-  if (terms.asset !== SUI_COIN) throw new PaymentError(`unsupported asset ${terms.asset}`);
+  if (!isSuiCoin(terms.asset)) throw new PaymentError(`unsupported asset ${terms.asset}`);
   if (!ADDRESS_RE.test(terms.payTo ?? "")) throw new PaymentError("invalid payTo address");
   if (!/^[1-9]\d*$/.test(terms.maxAmountRequired ?? "")) throw new PaymentError("invalid amount");
   const amount = BigInt(terms.maxAmountRequired);

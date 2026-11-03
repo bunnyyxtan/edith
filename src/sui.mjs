@@ -3,7 +3,8 @@
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { GrpcTransport } from "@protobuf-ts/grpc-transport";
 import { ChannelCredentials } from "@grpc/grpc-js";
-import { PaymentError, SUI_COIN } from "./payment.mjs";
+import { normalizeSuiAddress } from "@mysten/sui/utils";
+import { PaymentError, isSuiCoin } from "./payment.mjs";
 
 export const NETWORK = process.env.SUI_NETWORK ?? "devnet";
 
@@ -17,7 +18,8 @@ export function tatumSuiClient(network = NETWORK, apiKey = process.env.TATUM_API
   return new SuiGrpcClient({ network, transport });
 }
 
-const coinSuffix = (type) => type.slice(type.indexOf("::"));
+// Addresses compared in one canonical form, so 0x2 and 0x000…02 are the same account.
+const sameAddress = (a, b) => Boolean(a && b) && normalizeSuiAddress(a) === normalizeSuiAddress(b);
 
 // Rate limits, gateway hiccups and indexing lag right after execution are worth a short retry.
 const RETRYABLE_CODES = new Set(["UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED", "NOT_FOUND"]);
@@ -48,7 +50,7 @@ export async function verifyPayment(client, digest, { payTo, minAmount }) {
   }
   const tx = res.Transaction ?? res.FailedTransaction;
   const received = tx.balanceChanges
-    .filter((c) => c.address === payTo && coinSuffix(c.coinType) === coinSuffix(SUI_COIN))
+    .filter((c) => sameAddress(c.address, payTo) && isSuiCoin(c.coinType))
     .reduce((sum, c) => sum + BigInt(c.amount), 0n);
   return {
     ok: tx.status.success && received >= BigInt(minAmount),
@@ -86,10 +88,11 @@ export async function checkTransfer(client, bytes, { sender, payTo, amount }) {
   }
   const tx = res.Transaction ?? res.FailedTransaction;
   if (!tx.status.success) return `the transfer would fail on Sui (${tx.status.error?.message ?? "execution error"})`;
-  if (tx.transaction.sender !== sender) return "the transfer was signed by a different account than the one signed in";
-  const credits = tx.balanceChanges.filter((c) => BigInt(c.amount) > 0n && c.address !== sender);
-  const paid = credits.filter((c) => c.address === payTo && coinSuffix(c.coinType) === coinSuffix(SUI_COIN)).reduce((sum, c) => sum + BigInt(c.amount), 0n);
-  if (credits.some((c) => c.address !== payTo || coinSuffix(c.coinType) !== coinSuffix(SUI_COIN))) return "the transfer pays someone other than the quoted provider";
+  if (!sameAddress(tx.transaction.sender, sender)) return "the transfer was signed by a different account than the one signed in";
+  const credits = tx.balanceChanges.filter((c) => BigInt(c.amount) > 0n && !sameAddress(c.address, sender));
+  const paid = credits.filter((c) => sameAddress(c.address, payTo) && isSuiCoin(c.coinType)).reduce((sum, c) => sum + BigInt(c.amount), 0n);
+  if (credits.some((c) => !sameAddress(c.address, payTo))) return "the transfer pays someone other than the quoted provider";
+  if (credits.some((c) => !isSuiCoin(c.coinType))) return "the transfer moves a coin other than SUI";
   if (paid !== BigInt(amount)) return `the transfer pays ${paid} MIST, not the quoted ${amount} MIST`;
   return null;
 }

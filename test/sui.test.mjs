@@ -53,3 +53,24 @@ test("checkTransfer reports a transfer Sui refuses, and lets outages through", a
   await assert.rejects(checkTransfer(down, new Uint8Array(), { sender: "0xa", payTo: "0xb", amount: 1n }), /unavailable/);
   assert.equal(calls, 4, "outages are retried before giving up");
 });
+
+test("only native SUI counts: a look-alike ::sui::SUI coin from another package is not paid", async () => {
+  const fake = "0x00000000000000000000000000000000000000000000000000000000000abcde::sui::SUI";
+  const client = clientReturning(async () => tx([{ address: PAY_TO, coinType: fake, amount: "5000000" }]));
+  const result = await verifyPayment(client, "d", { payTo: PAY_TO, minAmount: 1n });
+  assert.equal(result.ok, false);
+  assert.equal(result.received, 0n);
+});
+
+test("checkTransfer refuses a transfer of a look-alike coin before it is sent", async () => {
+  const { checkTransfer } = await import("../src/sui.mjs");
+  const sender = `0x${"a".repeat(64)}`;
+  const simulate = (coinType) => ({ core: { simulateTransaction: async () => ({ Transaction: {
+    status: { success: true }, transaction: { sender },
+    balanceChanges: [{ address: sender, coinType: "0x2::sui::SUI", amount: "-1000" }, { address: PAY_TO, coinType, amount: "1000" }],
+  } }) } });
+  const terms = { sender, payTo: PAY_TO, amount: 1000n };
+  assert.equal(await checkTransfer(simulate("0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI"), new Uint8Array(), terms), null);
+  assert.match(await checkTransfer(simulate("0xabcde::sui::SUI"), new Uint8Array(), terms), /coin other than SUI/);
+  assert.match(await checkTransfer(simulate("0x2::sui::SUI"), new Uint8Array(), { ...terms, sender: `0x${"b".repeat(64)}` }), /different account/);
+});

@@ -56,3 +56,14 @@ test("parseTerms refuses unsafe terms before any payment", () => {
   assert.throws(() => parseTerms(body({ maxAmountRequired: "5000001" }), "mainnet", cap), /exceeds cap/);
   assert.throws(() => parseTerms(body({ extra: {} }), "mainnet", cap), /challenge/);
 });
+
+test("isSuiCoin accepts every spelling of native SUI and nothing else", async () => {
+  const { isSuiCoin } = await import("../src/payment.mjs");
+  assert.equal(isSuiCoin("0x2::sui::SUI"), true);
+  assert.equal(isSuiCoin("0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI"), true);
+  for (const type of ["0xabcde::sui::SUI", "0x2::sui::sui", "0x2::coin::SUI", "0x2::sui::SUI<u8>", "::sui::SUI", "", null, "not a type"]) {
+    assert.equal(isSuiCoin(type), false, String(type));
+  }
+  assert.throws(() => parseTerms(body({ asset: "0xabcde::sui::SUI" }), "mainnet", 5_000_000n), /unsupported asset/);
+  assert.equal(parseTerms(body({ asset: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI" }), "mainnet", 5_000_000n).amount, 1_000_000n);
+});
