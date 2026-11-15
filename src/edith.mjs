@@ -11,6 +11,7 @@ import { parseTerms, paymentHeader, transactionDigest } from "./payment.mjs";
 import { classifyResponse, decide } from "./policy.mjs";
 import { checkTransfer, verifyPayment } from "./sui.mjs";
 import { createProviderFetch } from "./net.mjs";
+import { cacheSeconds, checkExpect } from "./expect.mjs";
 
 export const MAX_PRICE_MIST = 10_000_000n; // hard ceiling per call, above any limit a payer can set: 0.01 SUI
 const REDEEM_ATTEMPTS = 4;
@@ -40,6 +41,7 @@ export function transferTransaction({ payTo, amount }, sender) {
 const mist = (value) => `${value / 1_000_000_000n}${`.${String(value % 1_000_000_000n).padStart(9, "0")}`.replace(/\.?0+$/, "")} SUI`;
 
 const UNANSWERED = { kind: "transient", reason: "paid, but the provider never answered" };
+export const REPORTED = { kind: "inaccurate", reason: "reported wrong by the payer" };
 
 function outcomeRecord(context, terms, digest, problem) {
   const outcome = { event: "outcome", ...context, paid: terms.amount, digest };
@@ -135,10 +137,12 @@ export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE
     emit({ step: "verified", digest, received: verification.received, timestampMs: verification.timestampMs });
 
     // Paid and no answer is an outcome too: the money is gone and nothing came back.
-    const judged = response ? classifyResponse(response.status, body, isUseful) : UNANSWERED;
+    // Well-formed is not enough when the agent said what a sane answer looks like.
+    const judged = response ? classifyResponse(response.status, body, isUseful) ?? checkExpect(body, planned.expect) : UNANSWERED;
     emit({ step: "judged", status: response?.status ?? null, body, problem: judged });
     const blobId = await remember(outcomeRecord(context, terms, digest, judged), digest, emit);
-    return { result: judged ? "failure" : "success", digest, status: response?.status ?? null, body, problem: judged, blobId, verification };
+    const maxAgeSec = judged ? 0 : cacheSeconds(response.headers.get("cache-control"));
+    return { result: judged ? "failure" : "success", digest, status: response?.status ?? null, body, problem: judged, blobId, verification, maxAgeSec };
   }
 
   // A payment whose fate was unknown: look again, and if it landed after all, remember it went unanswered.
@@ -149,5 +153,10 @@ export function createEdith({ sui, memory, network, payer, namespace = NAMESPACE
     return { paid: true, verification, blobId, problem: UNANSWERED };
   }
 
-  return { plan, settle, reconcile };
+  // The answer passed Edith's checks but the payer (or their agent) says it was wrong. Appends a later failure
+  // for the same request, so memory declines it from now on, exactly like junk Edith caught itself.
+  const flag = ({ context, terms, digest }, emit = () => {}) =>
+    remember({ ...outcomeRecord(context, terms, digest, REPORTED), reported: 1 }, digest, emit);
+
+  return { plan, settle, reconcile, flag };
 }

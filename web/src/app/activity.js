@@ -27,6 +27,7 @@ const MOVED = new Set(["paid", "settling", "uncertain"]);
 function amountCell(item) {
   if (MOVED.has(item.state)) return h("span.row-amount.mono", {}, `${sui(item.amountMist)} SUI`);
   if (item.state === "awaiting") return h("span.row-amount.mono.soft", {}, `${sui(item.amountMist)} SUI asked`);
+  if (item.state === "reused") return h("span.row-amount.mono.soft", {}, `${sui(item.amountMist)} SUI saved`);
   return h("span.row-amount.mono.soft", {}, "0 SUI");
 }
 

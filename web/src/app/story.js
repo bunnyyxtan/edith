@@ -7,6 +7,7 @@ const PROBLEM = {
   bad_payload: "returned an empty or broken answer",
   rejected: "refused the request after taking payment",
   transient: "had a temporary problem",
+  inaccurate: "gave a wrong answer",
 };
 
 export function problemText(problem) {
@@ -19,6 +20,8 @@ export function problemText(problem) {
 export function plainReason(reason) {
   if (/empty or malformed payload/.test(reason ?? "")) return "an empty or broken answer";
   if (/paid, but the provider never answered/.test(reason ?? "")) return "no answer at all";
+  if (/reported wrong by the payer/.test(reason ?? "")) return "an answer you reported as wrong";
+  if (/^expectation failed: /.test(reason ?? "")) return `an answer that broke the agent's rules (${reason.replace(/^expectation failed: /, "")})`;
   return reason ? `an error (${reason})` : "nothing useful";
 }
 
@@ -45,6 +48,11 @@ export function story(item) {
       return {
         word: "REFUSED.", tone: "hold", title: "Edith refused to pay for this again",
         text: `${basisText(item.decision?.basis) ?? `Edith's memory: ${item.decision?.reason}.`} Edith declined before contacting the provider. Nothing was paid.`,
+      };
+    case "reused":
+      return {
+        word: "REUSED.", tone: "good", title: "Answered from what you already paid for",
+        text: `You paid ${amount} for this exact request ${item.reusedFrom?.verifiedAt ? `on ${dateTime(item.reusedFrom.verifiedAt)}` : "earlier"}, and that answer is still fresh. Edith handed it back instead of paying again. Nothing was paid.`,
       };
     case "free":
       return { word: "FREE.", tone: "good", title: "No payment needed", text: `The provider answered without asking to be paid (HTTP ${item.status}).` };
@@ -75,7 +83,7 @@ export function story(item) {
 
 // Short label for lists.
 export const LABEL = {
-  awaiting: "Needs approval", blocked: "Refused", free: "Free", settling: "Settling", paid: "Paid",
+  awaiting: "Needs approval", blocked: "Refused", free: "Free", reused: "Reused", settling: "Settling", paid: "Paid",
   uncertain: "Unconfirmed", refused: "Not paid", failed: "Not paid", cancelled: "Declined", expired: "Expired",
 };
 
@@ -100,7 +108,7 @@ export function verdict(word, toneName) {
 export function evidence(item, network) {
   const rows = [];
   const row = (term, ...value) => rows.push(h("div.ev-row", {}, h("dt", {}, term), h("dd", {}, ...value)));
-  if (item.amountMist) row(item.state === "paid" || item.state === "settling" || item.state === "uncertain" ? "Amount" : item.state === "blocked" ? "Would have cost" : "Price", `${sui(item.amountMist)} SUI`);
+  if (item.amountMist) row(item.state === "paid" || item.state === "settling" || item.state === "uncertain" ? "Amount" : item.state === "blocked" ? "Would have cost" : item.state === "reused" ? "Saved" : "Price", `${sui(item.amountMist)} SUI`);
   row("Requested by", item.source?.kind === "agent" ? `${item.source.name} (agent)` : "You, in the app");
   if (item.provider) row("Provider", h("span.mono", {}, item.provider));
   if (item.terms?.payTo) row("Pays", h("span.mono", {}, shortId(item.terms.payTo)));
@@ -115,8 +123,24 @@ export function evidence(item, network) {
     if (basis.digest) row("Earlier payment", link(txUrl(network, basis.digest), shortId(basis.digest)));
     if (basis.blobId) row("Remembered in", link(blobUrl(network, basis.blobId), shortId(basis.blobId)));
   }
+  if (item.state === "reused" && item.reusedFrom?.digest) {
+    row("Paid for in", link(txUrl(network, item.reusedFrom.digest), shortId(item.reusedFrom.digest)));
+    if (item.reusedFrom.blobId) row("Remembered in", link(blobUrl(network, item.reusedFrom.blobId), shortId(item.reusedFrom.blobId)));
+  }
+  if (item.expect) row("Agent's rules", h("span.mono", {}, describeRules(item.expect)));
   if (item.status) row("Response", `HTTP ${item.status}`);
   return h("dl.evidence", {}, rows);
+}
+
+// An agent's expectations as one readable line: "priceUsd number 0.5–10 · asOf ≤ 300s old".
+export function describeRules(rules) {
+  return Object.entries(rules).map(([path, r]) => [
+    path,
+    r.type,
+    r.min !== undefined || r.max !== undefined ? `${r.min ?? "…"} to ${r.max ?? "…"}` : null,
+    r.equals !== undefined ? `= ${JSON.stringify(r.equals)}` : null,
+    r.maxAgeSec !== undefined ? `at most ${r.maxAgeSec}s old` : null,
+  ].filter(Boolean).join(" ")).join(" · ");
 }
 
 export function responsePreview(item) {

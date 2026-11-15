@@ -299,6 +299,99 @@ test("the full journey: a paid failure is remembered and the repeat is declined 
   assert.deepEqual(me.activity.map((a) => a.state), ["blocked", "paid", "paid"]);
 });
 
+test("a valid-looking answer reported as wrong is remembered and never paid for again", async (t) => {
+  const { person, chain, demo } = await start(t);
+  const alice = await person();
+  const bob = await person();
+
+  const quote = await alice.ask("SUI");
+  const settled = (await (await alice.pay(quote.activity)).text()).trim().split("\n").map((l) => JSON.parse(l)).at(-1).activity;
+  assert.equal(settled.result, "success");
+
+  assert.equal((await bob.as("POST", `/api/requests/${settled.id}/report`)).status, 404, "only the payer can report");
+  const pending = await alice.ask("WAL");
+  assert.equal((await alice.as("POST", `/api/requests/${pending.activity.id}/report`)).status, 409, "nothing paid, nothing to report");
+
+  const reported = await (await alice.as("POST", `/api/requests/${settled.id}/report`)).json();
+  assert.equal(reported.activity.result, "failure");
+  assert.equal(reported.activity.problem.kind, "inaccurate");
+  assert.equal((await alice.as("POST", `/api/requests/${settled.id}/report`)).status, 409, "reported once");
+
+  const again = await alice.ask("SUI");
+  assert.equal(again.activity.state, "blocked");
+  assert.equal(again.activity.decision.source, "memory");
+  assert.equal(again.activity.decision.basis.digest, settled.digest);
+  assert.equal(chain.calls.execute, 1, "no second payment");
+
+  const memory = await (await alice.as("GET", `/api/memory?url=${encodeURIComponent(`${demo.baseUrl}?ticker=SUI`)}`)).json();
+  assert.ok(memory.records.some((r) => r.reported && r.result === "failure" && r.digest === settled.digest));
+});
+
+test("a fresh paid answer is handed back instead of paying again, and counted as saved", async (t) => {
+  const { person, chain } = await start(t);
+  const alice = await person();
+  const first = await alice.ask("SUI");
+  const paid = (await (await alice.pay(first.activity)).text()).trim().split("\n").map((l) => JSON.parse(l)).at(-1).activity;
+  assert.ok(paid.freshUntil, "Quote Desk's max-age makes the answer reusable");
+
+  const again = await alice.ask("SUI");
+  assert.equal(again.activity.state, "reused");
+  assert.equal(again.activity.reusedFrom.digest, paid.digest);
+  assert.equal(again.activity.body, paid.body);
+  assert.equal(chain.calls.execute, 1, "no second payment");
+
+  const junk = await alice.ask("ZZZ");
+  await (await alice.pay(junk.activity)).text();
+  assert.equal((await alice.ask("ZZZ")).activity.state, "blocked", "a bad answer is refused, never reused");
+
+  const me = await (await alice.as("GET", "/api/me")).json();
+  assert.equal(me.savedMist, "2000000", "one reuse and one refusal, 0.001 SUI each");
+});
+
+test("an agent's expectations judge the paid answer; a broken rule is remembered and refused next time", async (t) => {
+  const { person, demo, chain } = await start(t);
+  const alice = await person();
+  const bot = await alice.connectAgent();
+  const url = `${demo.baseUrl}?ticker=SUI`;
+  const expect = { priceUsd: { type: "number", max: 1 }, ticker: { equals: "SUI" } };
+
+  assert.equal((await bot.call("POST", "/v1/requests", { url, expect: { priceUsd: { between: 1 } } })).status, 400);
+  assert.equal((await bot.call("POST", "/v1/requests", { url, expect: { "a b": {} } })).status, 400);
+  assert.equal((await bot.call("POST", "/v1/requests", { url, maxAgeSec: -5 })).status, 400);
+
+  const asked = await (await bot.call("POST", "/v1/requests", { url, expect })).json();
+  assert.equal(asked.state, "awaiting");
+  assert.deepEqual(asked.expect, expect);
+  const item = (await (await alice.as("GET", "/api/me")).json()).activity.find((a) => a.id === asked.id);
+  await (await alice.pay(item)).text();
+
+  const judged = await (await bot.call("GET", `/v1/requests/${asked.id}`)).json();
+  assert.equal(judged.result, "failure");
+  assert.equal(judged.problem.kind, "inaccurate");
+  assert.match(judged.problem.reason, /priceUsd 3.41 is above 1/);
+
+  const repeat = await (await bot.call("POST", "/v1/requests", { url })).json();
+  assert.equal(repeat.state, "blocked", "remembered for the wallet, not only for this agent's rules");
+  assert.equal(chain.calls.execute, 1);
+});
+
+test("an agent's own max age lets it reuse an answer the provider did not promise to keep fresh", async (t) => {
+  const { person, demo, chain } = await start(t);
+  const alice = await person();
+  const bot = await alice.connectAgent();
+  const url = `${demo.baseUrl}?ticker=SUI`;
+  const first = await (await bot.call("POST", "/v1/requests", { url })).json();
+  const item = (await (await alice.as("GET", "/api/me")).json()).activity.find((a) => a.id === first.id);
+  await (await alice.pay(item)).text();
+
+  const reused = await (await bot.call("POST", "/v1/requests", { url, maxAgeSec: 3600 })).json();
+  assert.equal(reused.state, "reused");
+  assert.equal(reused.savedMist, "1000000");
+  const strict = await (await bot.call("POST", "/v1/requests", { url, expect: { priceUsd: { max: 1 } } })).json();
+  assert.equal(strict.state, "awaiting", "a stored answer that breaks the caller's rules is not handed back");
+  assert.equal(chain.calls.execute, 1);
+});
+
 test("each wallet sees only its own activity, memory and quotes", async (t) => {
   const { person, demo } = await start(t);
   const alice = await person();

@@ -133,6 +133,9 @@ test("a pending approval is claimed once, by its owner, before it expires", asyn
   assert.equal(claims.filter((c) => c.planned).length, 1, "a double submit pays once");
   const won = claims.find((c) => c.planned).planned;
   assert.equal(won.terms.amount, 1_000_000n, "amounts survive storage as exact integers");
+  assert.equal(won.expect, null);
+  await plans.put("id4", ALICE, { ...planned, expect: { priceUsd: { max: 5 } } }, clock.t + 60_000);
+  assert.deepEqual((await plans.take("id4", ALICE)).planned.expect, { priceUsd: { max: 5 } }, "an agent's rules survive until payment");
   assert.ok(claims.some((c) => c.reason === "busy"));
   assert.equal(await plans.cancel("id1", ALICE), false, "a quote being paid cannot be withdrawn");
 

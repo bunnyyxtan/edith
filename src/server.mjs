@@ -18,6 +18,7 @@ const BROKEN = {
 };
 
 const RETRY_AFTER_SECONDS = 2;
+const QUOTE_FRESH_SECONDS = 60;
 
 function send(res, status, body, headers = {}) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...headers });
@@ -27,7 +28,8 @@ function send(res, status, body, headers = {}) {
 function quote(ticker) {
   if (BROKEN[ticker]) return BROKEN[ticker];
   if (!(ticker in QUOTES)) return { status: 404, body: { error: "unknown ticker" } };
-  return { status: 200, body: { ticker, priceUsd: QUOTES[ticker], asOf: new Date().toISOString() } };
+  // A good quote stays good for a minute, so a client may reuse it instead of paying again.
+  return { status: 200, body: { ticker, priceUsd: QUOTES[ticker], asOf: new Date().toISOString() }, headers: { "cache-control": `private, max-age=${QUOTE_FRESH_SECONDS}` } };
 }
 
 // Request handler for the paid API, answering under `prefix`.
@@ -47,8 +49,8 @@ export function createProviderHandler(paywall, prefix = "") {
       console.error("payment settlement failed:", err);
       return send(res, 503, { error: "payment settlement unavailable" }, { "retry-after": String(RETRY_AFTER_SECONDS) });
     }
-    const { status, body } = quote((url.searchParams.get("ticker") ?? "").toUpperCase());
-    send(res, status, body);
+    const { status, body, headers } = quote((url.searchParams.get("ticker") ?? "").toUpperCase());
+    send(res, status, body, headers);
   };
 }
 

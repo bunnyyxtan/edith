@@ -117,8 +117,8 @@ export function pgStore(db) {
 // Pending approvals: the quote Edith got for a request, waiting for its owner's signature.
 // take() claims a quote atomically, so a double submit, a second tab or a second instance cannot pay it twice.
 export function pgPlans(db, now = () => Date.now()) {
-  const toRow = ({ url, context, terms }) => asJson({ url, context, terms: { payTo: terms.payTo, amount: String(terms.amount), challenge: terms.challenge } });
-  const fromRow = ({ url, context, terms }) => ({ url, context, terms: { ...terms, amount: BigInt(terms.amount) } });
+  const toRow = ({ url, context, terms, expect }) => asJson({ url, context, expect: expect ?? null, terms: { payTo: terms.payTo, amount: String(terms.amount), challenge: terms.challenge } });
+  const fromRow = ({ url, context, terms, expect }) => ({ url, context, expect: expect ?? null, terms: { ...terms, amount: BigInt(terms.amount) } });
   return {
     async put(id, address, planned, expiresAt) {
       await db.query("DELETE FROM edith_plans WHERE expires_at < $1", [at(now() - 60 * 60_000)]);

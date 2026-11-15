@@ -55,7 +55,8 @@ export function renderOverview(root, app) {
           h("p.row-sub", {}, live.map((a) => a.name).join(", ")))),
       h("dl.agent-stats.status-stats", {},
         h("div", {}, h("dt", {}, "Per payment"), h("dd.mono", {}, `${sui(me.limits.perCallMist)} SUI`)),
-        h("div", {}, h("dt", {}, "Spent, 24 hours"), h("dd.mono", {}, `${sui(me.spentMist)} of ${sui(me.limits.dailyMist)} SUI`))),
+        h("div", {}, h("dt", {}, "Spent, 24 hours"), h("dd.mono", {}, `${sui(me.spentMist)} of ${sui(me.limits.dailyMist)} SUI`)),
+        h("div", { title: "Refused repeats of known-bad requests, plus answers handed back instead of paid for again" }, h("dt", {}, "Saved by Edith"), h("dd.mono", {}, `${sui(me.savedMist ?? "0")} SUI`))),
       h("div.status-links", {},
         h("a.btn.btn--small.btn--light", { href: "/app/agents", onclick: app.go("/app/agents") }, "Agents"),
         h("a.btn.btn--small.btn--light", { href: "/app/limits", onclick: app.go("/app/limits") }, "Limits")));

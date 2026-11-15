@@ -15,11 +15,14 @@
 //   POST /api/requests/:id/cancel     decline a quote
 //   POST /api/requests/:id/recheck    look again at a payment whose fate was unknown
 //   POST /api/requests/:id/requote    a fresh price for an agent's request still waiting for approval
+//   POST /api/requests/:id/report     a paid answer that looked valid was wrong: remember it as a failure
 //   GET  /api/agents                  the wallet's agents
 //   POST /api/agents                  connect an agent: returns its key once
 //   POST /api/agents/:id/revoke       disconnect an agent
 // Agent API, authorized by an agent key (Authorization: Bearer ek_...), never by the session cookie:
 //   POST /v1/requests                 ask Edith about a paid URL. Refusals are final; payments wait for the owner.
+//                                     { url, expect?, maxAgeSec? }: rules a paid answer must meet (src/expect.mjs),
+//                                     and how old an answer already paid for this exact request the agent accepts.
 //   GET  /v1/requests/:id             where that request stands, and the provider's answer once paid
 //   POST /v1/requests/:id/cancel      withdraw a request still waiting for approval
 // /demo/* is the bundled paid API; everything else serves the built web app.
@@ -27,7 +30,8 @@ import { createServer } from "node:http";
 import { fromBase64 } from "@mysten/sui/utils";
 import { MAX_AGENTS, matchAgent, newAgent, parseAgentToken, publicAgent, validAgentName } from "./agents.mjs";
 import { AuthError, SESSION_COOKIE, SESSION_TTL_MS } from "./auth.mjs";
-import { MAX_PRICE_MIST, SettleError, createEdith } from "./edith.mjs";
+import { MAX_PRICE_MIST, REPORTED, SettleError, createEdith } from "./edith.mjs";
+import { ExpectError, checkExpect, parseExpect } from "./expect.mjs";
 import { describeRequest, loadRecords, toOutcome, userNamespace } from "./memory.mjs";
 import { UnsafeUrlError } from "./net.mjs";
 import { PaymentError, transactionDigest } from "./payment.mjs";
@@ -41,6 +45,7 @@ const APPROVAL_WINDOW_MS = 24 * 60 * 60_000; // how long an agent's request wait
 const SETTLING_STALE_MS = 6 * 60_000; // longer than any function runs (5 min): a settlement this old was cut off
 export const MAX_DAILY_MIST = 1_000_000_000n; // 1 SUI: the highest daily limit a person can set
 const BODY_PREVIEW_CHARS = 2000;
+const REUSE_MAX_SEC = 24 * 60 * 60; // the longest a paid answer is handed back again, whatever the provider or agent says
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
 const words = (token) => (token ? String(token).replaceAll("_", " ") : null);
@@ -70,6 +75,7 @@ export function present(record) {
   return {
     event: "paid", result: outcome.result, kind: outcome.kind ?? null, request, reason: words(outcome.reason),
     paidMist: String(outcome.paid), digest: outcome.digest ?? null, at: outcome.at, blobId: record.blobId ?? null,
+    reported: record.reported === "1",
   };
 }
 
@@ -103,6 +109,34 @@ function plannedItem(planned, base) {
     return { ...base, state: "blocked", decision, amountMist: quoted !== undefined ? String(quoted) : decision.basis?.paidMist ?? null, amountFrom: quoted !== undefined ? "quote" : "memory" };
   }
   return { ...base, state: "free", status: planned.status, body: preview(planned.body) };
+}
+
+// An earlier paid answer handed back instead of paying again. It points at the original payment as evidence.
+function reusedItem(earlier, base) {
+  return {
+    ...base, state: "reused", amountMist: earlier.amountMist, status: earlier.status, body: earlier.body, bodyComplete: true,
+    reusedFrom: { id: earlier.id, digest: earlier.digest ?? null, blobId: earlier.blobId ?? null, verifiedAt: earlier.verifiedAt ?? earlier.at },
+    decision: { action: "reuse", source: "memory", reason: "already paid for this exact request, and the answer is still fresh", basis: null },
+  };
+}
+
+// What an item kept in the wallet: a reused answer, or a payment memory refused. Limit holds are not counted.
+const savedBy = (item) => (item.state === "reused" || (item.state === "blocked" && item.decision?.source === "memory") ? BigInt(item.amountMist ?? 0) : 0n);
+
+// Agent input at the boundary: its expectations, and how old an already-paid answer it will accept.
+function agentRules(body) {
+  let expect;
+  try {
+    expect = parseExpect(body.expect);
+  } catch (err) {
+    if (err instanceof ExpectError) throw new HttpError(400, err.message);
+    throw err;
+  }
+  const raw = body.maxAgeSec;
+  if (raw !== undefined && raw !== null && !(Number.isInteger(raw) && raw >= 1 && raw <= REUSE_MAX_SEC)) {
+    throw new HttpError(400, `maxAgeSec must be a whole number of seconds from 1 to ${REUSE_MAX_SEC}.`);
+  }
+  return { expect, maxAgeSec: raw ?? null };
 }
 
 // Where a failed settlement leaves the activity item.
@@ -161,15 +195,44 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     return item;
   }
 
+  // Saves an item and adds what it saved to the wallet's running total, in one write. The total is kept
+  // apart from activity, which is capped, so it never shrinks as old items roll off.
+  const saveItem = (address, id, item) => store.update(address, (user) => ({ ...withActivity(user, id, item), savedMist: String(BigInt(user.savedMist ?? 0) + savedBy(item)) }))
+    .then((u) => u.activity.find((a) => a.id === id));
+
+  // A fresh paid answer to this exact request: within the provider's own max-age, or the agent's own tolerance.
+  // Reported answers, cut-off bodies and answers that fail the caller's expectations never qualify.
+  function reusable(user, target, { maxAgeSec, expect, now = Date.now() }) {
+    const { key, provider } = describeRequest("GET", target);
+    return user.activity.find((a) => {
+      if (a.state !== "paid" || a.result !== "success" || a.reported || !a.bodyComplete) return false;
+      if (a.context?.key !== key || a.provider !== provider || a.context?.network !== network) return false;
+      const paidAt = Date.parse(a.verifiedAt ?? a.at);
+      const until = Math.max(Date.parse(a.freshUntil ?? "") || 0, maxAgeSec ? paidAt + maxAgeSec * 1000 : 0);
+      if (!(until > now)) return false;
+      try {
+        return checkExpect(JSON.parse(a.body), expect, now) === null;
+      } catch {
+        return false;
+      }
+    }) ?? null;
+  }
+
   // Recall, judge and quote one request for `address`, and record it as activity `id`. Nothing is paid.
-  async function planRequest(address, target, { source, emit = () => {}, id = newActivityId(), at = new Date().toISOString() }) {
+  async function planRequest(address, target, { source, expect = null, maxAgeSec = null, emit = () => {}, id = newActivityId(), at = new Date().toISOString() }) {
     const user = await store.read(address);
+    const earlier = reusable(user, target, { maxAgeSec, expect });
+    if (earlier) {
+      const context = { ...describeRequest("GET", target), network };
+      emit({ step: "reused", from: earlier.id });
+      return saveItem(address, id, reusedItem(earlier, { at, url: target, request: words(context.key), provider: context.provider, context, source, stale: false, expect, maxAgeSec }));
+    }
     const planned = await edithFor(address).plan(target, { limits: bigLimits(user.limits), spentMist: spentToday(user) }, emit);
     if (planned.action === "pay") requirePaymentHistory(user);
-    const base = { at, url: target, request: words(planned.context.key), provider: planned.context.provider, context: planned.context, source, stale: false };
+    const base = { at, url: target, request: words(planned.context.key), provider: planned.context.provider, context: planned.context, source, stale: false, expect, maxAgeSec };
     const item = plannedItem(planned, base);
-    if (planned.action === "pay") await plans.put(id, address, planned, Date.parse(item.expiresAt));
-    return setItem(address, id, item);
+    if (planned.action === "pay") await plans.put(id, address, { ...planned, expect }, Date.parse(item.expiresAt));
+    return saveItem(address, id, item);
   }
 
   const logPlanFailure = (err) => {
@@ -199,7 +262,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     if (now.state !== "awaiting") return { activity: now };
     if (!now.stale) return { activity: now };
     try {
-      return { activity: await planRequest(address, item.url, { source: item.source, id, at: item.at }) };
+      return { activity: await planRequest(address, item.url, { source: item.source, expect: item.expect ?? null, maxAgeSec: item.maxAgeSec ?? null, id, at: item.at }) };
     } catch (err) {
       logPlanFailure(err);
       throw new HttpError(502, describeFailure(err));
@@ -224,6 +287,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
       approval: now.state === "awaiting" ? { needed: true, review: `${origin}/app?review=${now.id}` } : null,
       result: now.result ?? null, problem: now.problem ?? null, status: now.status ?? null, body: now.body ?? null,
       digest: now.digest ?? null, blobId: now.blobId ?? null, error: now.error ?? null, at: now.at,
+      expect: now.expect ?? null, reusedFrom: now.reusedFrom ?? null, savedMist: String(savedBy(now)),
     };
   }
 
@@ -288,7 +352,14 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     };
     try {
       const settled = await edithFor(address).settle(entry.planned, { transaction, signature }, track);
-      const item = await setItem(address, id, { state: "paid", verifiedAt, result: settled.result, problem: settled.problem, status: settled.status, body: preview(settled.body), blobId: settled.blobId, memory: "saved", error: null });
+      const body = preview(settled.body);
+      const freshSec = Math.min(settled.maxAgeSec ?? 0, REUSE_MAX_SEC);
+      const item = await setItem(address, id, {
+        state: "paid", verifiedAt, result: settled.result, problem: settled.problem, status: settled.status, body, blobId: settled.blobId, memory: "saved", error: null,
+        // Only a whole answer can be handed back later; the provider's max-age says for how long.
+        bodyComplete: body !== null && body.length < BODY_PREVIEW_CHARS,
+        freshUntil: freshSec > 0 ? new Date(Date.parse(verifiedAt ?? new Date().toISOString()) + freshSec * 1000).toISOString() : null,
+      });
       emit({ step: "settled", activity: item });
     } catch (err) {
       console.error("settle failed:", err);
@@ -317,6 +388,24 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     }
     if (!result.paid) return { activity: current(await setItem(address, id, { state: "uncertain", checkedAt: new Date().toISOString() })) };
     return { activity: await setItem(address, id, { state: "paid", result: "failure", problem: result.problem, blobId: result.blobId, memory: "saved", error: null, verifiedAt: new Date(result.verification.timestampMs ?? Date.now()).toISOString() }) };
+  }
+
+  // Edith judges whether an answer is well-formed, not whether it is true. The payer can say it was wrong.
+  async function report(address, id) {
+    const item = (await store.read(address)).activity.find((a) => a.id === id);
+    if (!item) throw new HttpError(404, "Edith has no record of this payment.");
+    const now = current(item);
+    if (now.state !== "paid" || now.result !== "success" || !item.context || !item.digest) {
+      throw new HttpError(409, "Only a paid answer Edith judged useful can be reported as wrong.");
+    }
+    const terms = { payTo: item.terms.payTo, amount: BigInt(item.terms.amount) };
+    try {
+      const blobId = await edithFor(address).flag({ context: item.context, terms, digest: item.digest });
+      return { activity: await setItem(address, id, { result: "failure", problem: REPORTED, reported: true, blobId, memory: "saved" }) };
+    } catch (err) {
+      console.error("report failed:", err);
+      throw new HttpError(502, "Edith couldn't save your report to Walrus Memory. Try again in a moment.");
+    }
   }
 
   function validLimits(body) {
@@ -361,7 +450,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
     "GET /api/me": async (req) => {
       const address = signedIn(req);
       const user = await store.read(address);
-      return { address, limits: user.limits, limitsSetAt: user.limitsSetAt ?? null, spentMist: spentToday(user), activity: user.activity.map(current), agents: (user.agents ?? []).map(publicAgent) };
+      return { address, limits: user.limits, limitsSetAt: user.limitsSetAt ?? null, spentMist: spentToday(user), savedMist: user.savedMist ?? "0", activity: user.activity.map(current), agents: (user.agents ?? []).map(publicAgent) };
     },
 
     "GET /api/balance": async (req) => {
@@ -407,6 +496,12 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
       return requote(address, id);
     },
 
+    "POST /api/requests/:id/report": async (req, res, url, id) => {
+      const address = signedIn(req);
+      await readBody(req);
+      return report(address, id);
+    },
+
     "GET /api/agents": async (req) => {
       const user = await store.read(signedIn(req));
       return { agents: (user.agents ?? []).map(publicAgent) };
@@ -437,10 +532,12 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
 
     "POST /v1/requests": async (req) => {
       const { address, agent } = await agentFor(req);
-      const target = requestUrl((await readBody(req)).url);
+      const body = await readBody(req);
+      const target = requestUrl(body.url);
+      const { expect, maxAgeSec } = agentRules(body);
       if (!(await requestLimit(address))) throw new HttpError(429, "Too many requests in a minute. Wait a moment, then try again.");
       try {
-        return agentView(await planRequest(address, target, { source: { kind: "agent", agentId: agent.id, name: agent.name } }));
+        return agentView(await planRequest(address, target, { source: { kind: "agent", agentId: agent.id, name: agent.name }, expect, maxAgeSec }));
       } catch (err) {
         logPlanFailure(err);
         throw new HttpError(422, describeFailure(err));
@@ -463,7 +560,7 @@ export function createHandler({ sui, memory, network, store, auth, providerFetch
   };
 
   function route(method, pathname) {
-    const action = /^\/(api|v1)\/(requests|agents)\/([\w-]{6,32})(?:\/(pay|cancel|recheck|requote|revoke))?$/.exec(pathname);
+    const action = /^\/(api|v1)\/(requests|agents)\/([\w-]{6,32})(?:\/(pay|cancel|recheck|requote|report|revoke))?$/.exec(pathname);
     if (action) {
       const [, scope, kind, id, verb] = action;
       return [routes[`${method} /${scope}/${kind}/:id${verb ? `/${verb}` : ""}`] ?? null, id];

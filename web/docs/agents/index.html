@@ -17,12 +17,16 @@
         <p>On the signed-in <a href="/app/agents">Agents</a> screen, enter an <strong>Agent name</strong> and select <strong>Create agent key</strong>. The secret is shown once. Store it as a secret in the agent's environment, not in source code, browser code, screenshots, or logs. Send it in the <code>Authorization: Bearer &lt;key&gt;</code> header for every <code>/v1/</code> request.</p>
         <p>Each key belongs to one wallet and can read only requests created with that agent. It cannot call the owner's payment endpoints or approve in the wallet. Disconnecting the agent in Edith revokes the key.</p>
         <h2 id="create-request">Create a request</h2>
-        <p><code>POST /v1/requests</code> accepts JSON with one field, <code>url</code>. Use an HTTPS paid API address that Edith can reach. The response is a JSON record of the decision. The call itself never spends SUI.</p>
+        <p><code>POST /v1/requests</code> accepts JSON with a required <code>url</code> and two optional fields. Use an HTTPS paid API address that Edith can reach. The response is a JSON record of the decision. The call itself never spends SUI.</p>
+        <ul>
+          <li><code>expect</code>: up to 10 rules a paid answer must meet, keyed by a dot path such as <code>"data.price"</code>. Each rule may set <code>type</code> (<code>number</code>, <code>string</code> or <code>boolean</code>), <code>min</code>, <code>max</code>, <code>equals</code>, and <code>maxAgeSec</code> for a timestamp field. Every listed field must be present. A broken rule is saved to Walrus Memory as a wrong answer, and Edith refuses that exact request for the whole wallet from then on. A timestamp that is too old only counts as stale and cools down for 15 minutes. The owner sees the rules before approving.</li>
+          <li><code>maxAgeSec</code>: how old an answer to this exact request, already paid for by this wallet, the agent will accept (1 to 86400). Edith also reuses an answer while the provider's own <code>Cache-Control: max-age</code> says it is fresh. A reused answer comes back with state <code>reused</code> and costs nothing. Answers that were reported, that failed, or that break this request's <code>expect</code> are never reused.</li>
+        </ul>
         <div class="code-head"><span>HTTP · replace the placeholder key</span><button class="copy-code" type="button" data-copy="agent-post">Copy</button></div>
         <pre><code id="agent-post">curl -X POST 'https://edith-sooty.vercel.app/v1/requests' \
   -H 'Authorization: Bearer YOUR_AGENT_KEY' \
   -H 'Content-Type: application/json' \
-  --data '{"url":"https://edith-sooty.vercel.app/demo/quote?ticker=SUI"}'</code></pre>
+  --data '{"url":"https://edith-sooty.vercel.app/demo/quote?ticker=SUI","maxAgeSec":300,"expect":{"priceUsd":{"type":"number","min":0.01,"max":100},"ticker":{"equals":"SUI"},"asOf":{"maxAgeSec":120}}}'</code></pre>
         <p>The Quote Desk URL is the bundled Mainnet demo provider. If the request is payable, its state is <code>awaiting</code>. The wallet owner must still approve its 0.001 SUI quote plus network fees.</p>
         <h2 id="read-request">Read a result or withdraw a request</h2>
         <p>Use <code>GET /v1/requests/:id</code> with the same key to poll the request. An agent may withdraw an <code>awaiting</code> request with <code>POST /v1/requests/:id/cancel</code>. Cancellation cannot undo a payment that has started.</p>
@@ -31,6 +35,7 @@
   -H 'Authorization: Bearer YOUR_AGENT_KEY'</code></pre>
         <h2 id="states">Read the response states</h2>
         <div class="table-wrap"><table><thead><tr><th scope="col">State</th><th scope="col">What it means</th><th scope="col">Agent action</th></tr></thead><tbody>
+          <tr><th scope="row"><code>reused</code></th><td>This wallet already paid for this exact request and the answer is still fresh. <code>body</code> holds it; <code>reusedFrom.digest</code> is the original payment.</td><td>Use the answer. Nothing was paid.</td></tr>
           <tr><th scope="row"><code>awaiting</code></th><td>A priced request needs owner review. <code>approval.review</code> is the review URL.</td><td>Show the URL and poll. Do not assume approval.</td></tr>
           <tr><th scope="row"><code>blocked</code></th><td>Memory, a price rule, or a limit refused it before payment.</td><td>Read <code>decision.reason</code>; do not retry blindly.</td></tr>
           <tr><th scope="row"><code>free</code></th><td>The provider returned data without payment.</td><td>Read <code>status</code> and <code>body</code>.</td></tr>

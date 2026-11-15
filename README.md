@@ -40,6 +40,10 @@ Screenshots were captured from the deployed app with a connected wallet. They sh
 | **Independent confirmation** | Verifies the completed Sui transfer through Tatum rather than relying only on the provider's response. |
 | **Durable learning** | Saves paid outcomes to wallet-scoped Walrus Memory, then cites earlier evidence in later decisions. |
 | **Reviewable activity** | Shows requests, decisions, transaction digests, and memory references in the app. |
+| **Never pay twice for the same answer** | A paid answer to the exact same request is handed back free while it is fresh, by the provider's `Cache-Control: max-age` or the agent's own `maxAgeSec`. Reused answers point back to the original Sui payment. |
+| **Agent expectations** | An agent can send rules with a request (required fields, types, ranges, exact values, timestamp freshness). The paid answer is judged against them, and a broken rule is remembered like any other bad answer, so Edith won't pay for it again. |
+| **Savings counter** | The overview shows the SUI Edith saved: refused repeats of known-bad requests plus reused answers. |
+| **Report wrong answers** | Edith judges whether a paid response is well-formed, not whether its data is true. When an answer passes that check but is wrong, the owner can report it from the activity details. The report is saved to Walrus Memory as a failure, and Edith refuses to pay for that exact request again. |
 
 ## How it works
 
@@ -48,7 +52,7 @@ Screenshots were captured from the deployed app with a connected wallet. They sh
 3. **Approve.** The owner signs the exact SUI transfer in their wallet. Edith checks the signed payment's sender, recipient, and amount before forwarding it.
 4. **Verify and remember.** Edith confirms the transfer on Sui through Tatum, judges the provider's response, and writes the outcome to Walrus Memory. The agent can then retrieve its result.
 
-The [guided demo](https://edith-sooty.vercel.app/app/demo) uses Quote Desk to show a useful response, a paid empty response, and a repeat request refused from memory. Its two approved payments are **real Mainnet payments of 0.001 SUI each, plus network fees**. The repeat refusal costs nothing.
+The [guided demo](https://edith-sooty.vercel.app/app/demo) uses Quote Desk to show a useful response, a paid empty response, and a repeat request refused from memory. Its two approved payments are **real Mainnet payments of 0.001 SUI each, plus network fees**. The repeat refusal costs nothing. Quote Desk is a test API: its prices are fixed sample values, not a live price feed.
 
 ## Verified on Sui Mainnet
 

@@ -84,7 +84,25 @@ export function openDetail(app, id) {
   function followUps(it) {
     const out = [];
     if (it.state === "uncertain") out.push(h("button.btn", { type: "button", onclick: recheck }, icon("refresh"), "Check Sui again"));
+    if (it.state === "paid" && it.result === "success") {
+      out.push(h("button.btn.btn--light", { type: "button", onclick: report }, icon("alert"), "Report wrong answer"));
+    }
     return out;
+  }
+
+  // Edith checks that an answer is well-formed, not that it is true. A report is remembered like any other
+  // failure: Edith refuses this exact request from then on. There is no undo.
+  async function report() {
+    if (!confirm("Report this answer as wrong? Edith will refuse to pay for this exact request again.")) return;
+    try {
+      live = (await app.api.report(id)).activity;
+      app.toast("Reported. Edith will not pay for this again.");
+    } catch (err) {
+      app.toast(err.message);
+    }
+    await app.refreshMe();
+    live = null;
+    render();
   }
 
   // A stale agent request gets a fresh quote first; memory and limits are checked again on the way.

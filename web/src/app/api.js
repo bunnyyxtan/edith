@@ -76,6 +76,7 @@ export const api = {
   cancel: (id) => json("POST", `/api/requests/${id}/cancel`, {}),
   recheck: (id) => json("POST", `/api/requests/${id}/recheck`, {}),
   requote: (id) => json("POST", `/api/requests/${id}/requote`, {}),
+  report: (id) => json("POST", `/api/requests/${id}/report`, {}),
   createAgent: (name) => json("POST", "/api/agents", { name }),
   revokeAgent: (id) => json("POST", `/api/agents/${id}/revoke`, {}),
 };

@@ -253,13 +253,17 @@ export function renderProtect(root, app) {
           setStep("quote", "active");
         }
         if (e.step === "quoted") setStep("quote", "done", `${sui(e.terms.amount)} SUI to ${shortId(e.terms.payTo)}`);
+        if (e.step === "reused") {
+          setStep("recall", "done", "An answer you already paid for is still fresh");
+          setStep("quote", "active");
+        }
         if (e.step === "planned") {
           run.item = e.activity;
           const quoteStep = run.steps.find((s) => s.key === "quote");
           if (quoteStep?.status === "active") quoteStep.status = e.activity.state === "free" ? "done" : "skip";
           if (quoteStep?.status === "skip") quoteStep.detail = "Not asked: memory already decided";
           const pay = e.activity.state === "awaiting";
-          setStep("decide", pay || e.activity.state === "free" ? "done" : "bad", pay ? "Edith would pay. Your approval is next." : story(e.activity).title);
+          setStep("decide", pay || e.activity.state === "free" || e.activity.state === "reused" ? "done" : "bad", pay ? "Edith would pay. Your approval is next." : story(e.activity).title);
           if (pay) setStep("sign", "active");
         }
         if (e.step === "error") {
