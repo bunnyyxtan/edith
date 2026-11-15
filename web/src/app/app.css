@@ -231,6 +231,9 @@
 .notice { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; padding: 14px 16px; border-radius: var(--r-control); font-size: 14px; line-height: 1.5; }
 .notice--bad { background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-ink); }
 .notice .icon { margin-top: 1px; }
+.notice--done { background: color-mix(in srgb, var(--blue) 7%, transparent); border: 1px solid color-mix(in srgb, var(--blue) 22%, transparent); }
+.report-panel .report-q { font-weight: 600; margin-bottom: 4px; }
+.report-panel .actions { margin-top: 12px; }
 
 .meter { height: 8px; border-radius: 999px; background: var(--ground); overflow: hidden; margin-bottom: 12px; }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--sea); transition: width 600ms var(--ease); }

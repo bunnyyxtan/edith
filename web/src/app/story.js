@@ -62,7 +62,7 @@ export function story(item) {
       if (item.result === "failure") {
         return {
           word: "REMEMBERED.", tone: "hold", title: "Paid for nothing. Remembered.",
-          text: `You paid ${amount} and the provider ${problemText(item.problem)}. ${item.problem?.kind === "transient" ? "Edith will wait 15 minutes before paying for it again." : "Edith will refuse to pay for this request again."}`,
+          text: `${item.reported ? `You paid ${amount} and reported the answer as wrong.` : `You paid ${amount} and the provider ${problemText(item.problem)}.`} ${item.problem?.kind === "transient" ? "Edith will wait 15 minutes before paying for it again." : "Edith will refuse to pay for this request again."}`,
         };
       }
       return { word: "PAID.", tone: "good", title: "Paid, and worth it", text: `You paid ${amount} and got a useful answer. Edith remembers this provider delivered.` };

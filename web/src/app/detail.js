@@ -22,6 +22,7 @@ export function openDetail(app, id) {
   let failedStep = null;
   let error = null;
   let timer = null;
+  let reporting = null; // null | confirm | saving | done
 
   const item = () => live ?? app.state.me?.activity.find((a) => a.id === id);
 
@@ -38,6 +39,8 @@ export function openDetail(app, id) {
     else if (it.state === "awaiting" && !it.stale) parts.push(approval(it));
     parts.push(evidence(it, app.state.config.network), responsePreview(it));
     parts.push(h("p.fine", {}, `Recorded ${dateTime(it.at)}`));
+    if (reporting === "confirm" || reporting === "saving") parts.push(reportPanel(it));
+    if (reporting === "done") parts.push(reportedNote(it));
     const actions = followUps(it);
     if (actions.length) parts.push(h("div.actions", {}, actions));
     mount(body, ...parts);
@@ -84,24 +87,43 @@ export function openDetail(app, id) {
   function followUps(it) {
     const out = [];
     if (it.state === "uncertain") out.push(h("button.btn", { type: "button", onclick: recheck }, icon("refresh"), "Check Sui again"));
-    if (it.state === "paid" && it.result === "success") {
-      out.push(h("button.btn.btn--light", { type: "button", onclick: report }, icon("alert"), "Report wrong answer"));
+    if (it.state === "paid" && it.result === "success" && !reporting) {
+      out.push(h("button.btn.btn--light", { type: "button", onclick: () => { reporting = "confirm"; render(); } }, icon("alert"), "Report wrong answer"));
     }
     return out;
   }
 
   // Edith checks that an answer is well-formed, not that it is true. A report is remembered like any other
-  // failure: Edith refuses this exact request from then on. There is no undo.
+  // failure: Edith refuses this exact request from then on. There is no undo, so it is confirmed in place first.
+  function reportPanel(it) {
+    const saving = reporting === "saving";
+    const yes = h("button.btn", { type: "button", disabled: saving, onclick: report }, saving ? "Saving to Walrus Memory…" : "Yes, report it");
+    queueMicrotask(() => yes.focus());
+    return h("div.notice.notice--bad.report-panel", { role: "alertdialog", "aria-labelledby": "report-q", "aria-describedby": "report-what" },
+      icon("alert"),
+      h("div", {},
+        h("p.report-q#report-q", {}, "Report this answer as wrong?"),
+        h("p#report-what", {}, `Edith saves it to your Walrus Memory as a failed payment and refuses to pay for ${it.request ?? "this request"} again. The ${sui(it.amountMist)} SUI already paid is not refunded, and a report can't be undone.`),
+        h("div.actions", {}, yes, h("button.btn.btn--light", { type: "button", disabled: saving, onclick: () => { reporting = null; render(); } }, "Cancel"))));
+  }
+
+  function reportedNote(it) {
+    return h("div.notice.notice--done", { role: "status" }, icon("check"),
+      h("p", {}, "Reported and saved to Walrus Memory. ", h("strong", {}, "Saved by Edith"), ` will count every refused repeat of ${it.request ?? "this request"} from now on.`));
+  }
+
   async function report() {
-    if (!confirm("Report this answer as wrong? Edith will refuse to pay for this exact request again.")) return;
+    reporting = "saving";
+    error = null;
+    render();
     try {
       live = (await app.api.report(id)).activity;
-      app.toast("Reported. Edith will not pay for this again.");
+      reporting = "done";
     } catch (err) {
-      app.toast(err.message);
+      error = err.message;
+      reporting = "confirm";
     }
     await app.refreshMe();
-    live = null;
     render();
   }
 
